@@ -58,8 +58,8 @@ class MaterialPropertiesQuery:
         self.material_properties["Rubber"] = MaterialProperties(
             youngs_modulus=0.01e09,
             poisson_ratio=0.48,
-            density=1.05e3,
-            damping_coefficient=0.0)
+            density=1050,
+            damping_coefficient=0.10)
         self.material_properties["Plastic"] = MaterialProperties(
             youngs_modulus=0.01e9,
             poisson_ratio=0.48,
@@ -71,10 +71,10 @@ class MaterialPropertiesQuery:
             density=1.0e3,
             damping_coefficient=0.001)
         self.material_properties["Test 1"] = MaterialProperties(
-            youngs_modulus=1.0e8,
-            poisson_ratio=0.48,
-            density=1.0e2,
-            damping_coefficient=0.5)
+            youngs_modulus=10.0e5,
+            poisson_ratio=0.3,
+            density=1000,
+            damping_coefficient=0.00)
 
     def get_material_properties(self, material_name):
         if material_name in self.material_properties:

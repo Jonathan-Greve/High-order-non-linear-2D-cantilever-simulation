@@ -1,36 +1,28 @@
+import quadpy
+
 from Mesh.Cantilever.area_computations import compute_triangle_element_area
+from Simulator.triangle_shape_functions import triangle_shape_function_i_helper
 
 
-def iint_N_i_squared(points, faces, x, face_index=0):
+def compute_shape_function_volume(points, face):
     """
-    Compute the integral of the squared shape function N_i.
-    :param x: Is a 2x1 numpy array containing the x and y coordinates of the point.
+    Compute the integral of the shape function value for node i.
+    :param points: Is a nx2 numpy array containing the x and y coordinates of the nodes.
+    :param face: Is a 3x1 numpy array containing the indices of the nodes of the triangle.
     :return:
     """
 
-    # Get the triangle element
-    triangle_face = faces[face_index]
-    triangle_element = points[triangle_face]
+    # Compute matrix using quadpy (quadpy is a quadrature package)
+    triangle = points[face]
 
-    # Compute the area of the triangle
-    A_e = compute_triangle_element_area(points, triangle_face)
+    # get a "good" scheme of degree 10. (Even 2 should be enough since be use linear elements
+    # and we multiply them to get a second order polynomial)
+    scheme = quadpy.t2.get_good_scheme(10)
 
-    # Get element points
-    p_jx = triangle_element[1][0]
-    p_jy = triangle_element[1][1]
-    p_kx = triangle_element[2][0]
-    p_ky = triangle_element[2][1]
+    def N_i(x):
+        return triangle_shape_function_i_helper(points, face, x)
 
-    # Compute double integral over triangle
-    t1 = h ** 2
-    t2 = p_jx**2
-    t3 = (-p_jy-2*p_kx+p_ky)*p_jx
-    t4 = p_jy**2
-    t5 = (p_kx -2*p_ky)*p_jy
-    t6 = p_kx**2
-    t7 = -p_kx*p_ky
-    t8 = p_ky**2
-    t9 = p_jx - p_jy - p_kx + p_ky
-    result = t1 * ((t2 + t3 + t4 + t5 + t6 + t7 + t8) * t1 - 4*())
 
-    return val
+    n_i = scheme.integrate(lambda x: N_i(x), triangle)
+
+    return n_i

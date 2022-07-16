@@ -8,6 +8,7 @@ from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas
 from Mesh.Cantilever.generate_2d_cantilever_delaunay import generate_2d_cantilever_delaunay
 from Mesh.Cantilever.generate_2d_cantilever_kennys import generate_2d_cantilever_kennys
+from Simulator.integral_computations import compute_shape_function_volume
 from Simulator.result import Result
 from Simulator.triangle_shape_functions import triangle_shape_function_i_helper, \
     triangle_shape_function_j_helper, triangle_shape_function_k_helper
@@ -23,11 +24,20 @@ class Simulator:
 
         # Material settings
         self.material_properties = material_properties
-        self.lambda_ = (self.material_properties.youngs_modulus * self.material_properties.poisson_ratio
-                / ((1 + self.material_properties.poisson_ratio) *
-                   (1 - 2 * self.material_properties.poisson_ratio)))
-        self.mu = (self.material_properties.youngs_modulus /
-              (2 * (1 + self.material_properties.poisson_ratio)))
+        # self.lambda_ = (self.material_properties.youngs_modulus * self.material_properties.poisson_ratio
+        #         / ((1 + self.material_properties.poisson_ratio) *
+        #            (1 - 2 * self.material_properties.poisson_ratio)))
+        # self.mu = (self.material_properties.youngs_modulus /
+        #       (2 * (1 + self.material_properties.poisson_ratio)))
+
+        self.lambda_ = (
+                (self.material_properties.youngs_modulus * self.material_properties.poisson_ratio) /
+                ((1+self.material_properties.poisson_ratio)*(1-2*self.material_properties.poisson_ratio))
+        )
+        self.mu = (
+                self.material_properties.youngs_modulus /
+                (2 * (1+self.material_properties.poisson_ratio))
+        )
 
         # Cantilever settings
         self.length = length
@@ -45,6 +55,9 @@ class Simulator:
         self.mesh_points = points
         self.mesh_faces = faces
         self.all_A_e = compute_all_element_areas(self.mesh_points, self.mesh_faces)
+
+        # All volume under shape functions
+        self.all_V_e = np.array([compute_shape_function_volume(self.mesh_points, face) for face in self.mesh_faces])
 
         # Boundary node indices
         self.dirichlet_boundary_indices_x = \
@@ -73,12 +86,13 @@ class Simulator:
         f = - f_t - f_g
 
         # Add boundary conditions
-        f[self.dirichlet_boundary_indices_x] = 0
-        f[self.dirichlet_boundary_indices_y] = 0
+        # f[self.dirichlet_boundary_indices_x] = 0
+        # f[self.dirichlet_boundary_indices_y] = 0
 
         u_n = np.zeros(self.total_number_of_nodes * 2)
         v_n = np.zeros(self.total_number_of_nodes * 2)
         a_n = np.zeros(self.total_number_of_nodes * 2)
+        a_n[np.arange(1, self.total_number_of_nodes * 2, 2)] = self.gravity[1]
         x_n = self.mesh_points.reshape([self.total_number_of_nodes * 2])
 
         times = [0]
@@ -193,9 +207,7 @@ class Simulator:
         def compute_element_mass_matrix(face_index):
             triangle_face = self.mesh_faces[face_index]
             integral_N_square = self.compute_integral_N_squared(triangle_face)
-            return integral_N_square
-
-
+            return integral_N_square * self.material_properties.density
 
         # Compute all element mass matrices
         all_M_e = np.array([compute_element_mass_matrix(i) for i in range(len(self.mesh_faces))])
@@ -203,7 +215,7 @@ class Simulator:
         # Assemble the mass matrix
         M = self.assemble_square_matrix(all_M_e)
 
-        return M * self.material_properties.density
+        return M
 
 
     def compute_damping_matrix(self):
@@ -267,6 +279,7 @@ class Simulator:
             #     [dN_kX * y_k, dN_kY * y_k],
             # ])
             # F = F_i + F_j + F_k
+            # print(f'Triangle {triangle_face}')
             F = self.compute_F(
                 np.array([x_i, y_i]),
                 np.array([x_j, y_j]),
@@ -278,7 +291,8 @@ class Simulator:
 
             # Compute E
             I = np.eye(2)
-            E = 0.5 * ((F.T @ F) - I)
+            C = np.dot(np.transpose(F), F)
+            E = (C - I) / 2.0
 
             # Compute S
             S = self.lambda_ * np.trace(E) * I + 2 * self.mu * E
@@ -297,17 +311,19 @@ class Simulator:
                 (A_e * F @ S @ grad_k)[1]
             ])
 
-            return k_e, E
+            return k_e, E, F
 
         # Computes all element stiffness matrices
         all_k_e_matrices = np.zeros([len(self.mesh_faces), 6])
         all_Es = np.zeros([len(self.mesh_faces), 2, 2])
+        all_Fs = np.zeros([len(self.mesh_faces), 2, 2])
         for i in range(len(self.mesh_faces)):
             triangle_face = self.mesh_faces[i]
             A_e = self.all_A_e[i]
-            k_e, E = compute_element_stiffness_matrix(triangle_face, A_e)
+            k_e, E, F = compute_element_stiffness_matrix(triangle_face, A_e)
             all_k_e_matrices[i] = k_e
             all_Es[i] = E
+            all_Fs[i] = F
 
         # Assemble the stiffness matrix
         k = np.zeros([2 * self.total_number_of_nodes])
@@ -331,6 +347,12 @@ class Simulator:
 
             k[global_indices_list] += all_k_e_matrices[i]
 
+
+        # print("F: {}".format(all_Fs[0]))
+        # print("CE: {}".format(all_Es[0]))
+        # print("F: {}".format(all_Fs[1]))
+        # print("CE: {}".format(all_Es[1]))
+        # print('-------------------------------------')
         return k, all_Es
 
     def assemble_square_matrix(self, all_M_e):
@@ -366,7 +388,7 @@ class Simulator:
             f_g = np.zeros([2 * self.total_number_of_nodes])
             f_g[all_y_node_indices] = self.gravity[1]
 
-            P_0g = - self.all_A_e[0] * (self.material_properties.density * f_g)
+            P_0g = - self.all_V_e[0] * (self.material_properties.density * f_g)
 
             f_b += P_0g
 

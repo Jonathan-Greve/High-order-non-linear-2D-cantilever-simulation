@@ -17,7 +17,7 @@ def compute_triangle_element_area(vertices, triangle_face):
 
     area = 0.5 * cross_product_z(vec_i_to_j, vec_j_to_k)
 
-    return area
+    return np.absolute(area)
 
 
 def compute_all_element_areas(vertices, triangle_faces):

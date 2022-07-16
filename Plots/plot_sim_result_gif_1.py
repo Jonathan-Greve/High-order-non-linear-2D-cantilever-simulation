@@ -13,7 +13,7 @@ def make_sim_result_gif_1(vertices, faces, result, num_nodes_x, num_nodes_y, tra
     images = []
 
     num_time_steps_per_frame = 30
-    time_rate = 10
+    time_rate = 1
 
     for i in tqdm(range(0, len(result.nodal_displacements), num_time_steps_per_frame), desc='Creating GIF'):
         # make a Figure and attach it to a canvas.
@@ -28,12 +28,12 @@ def make_sim_result_gif_1(vertices, faces, result, num_nodes_x, num_nodes_y, tra
         ax.legend(handles=[reference, deformed], loc='upper left')
         ax.set_xlabel(r'$X_1$')
         ax.set_xlim(-3.1, 3.5)
-        ax.set_ylim(-2, 2)
+        ax.set_ylim(-4.6, 2)
         ax.set_ylabel(r'$X_2$')
         ax.set_title(f'Showing the deformed cantilever mesh compared with the reference mesh.' +
                   '\n' + f'Horizontal nodes: {num_nodes_x}. Vertical nodes: {num_nodes_y}. Total nodes: {num_nodes_x * num_nodes_y}. Elements: {faces.shape[0]}' +
                   '\n' + f'Traction force: {traction}'
-                  '\n' + f'Time elapsed: {result.time_steps[i]}/{time}s.')
+                  '\n' + f'Time elapsed: {result.time_steps[i]:.2f}/{time:.2f}s.')
         # Trick to write PNG into memory buffer and read it using PIL
         with io.BytesIO() as out:
             fig.savefig(out, format="png")  # Add dpi= to match your figsize

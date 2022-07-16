@@ -4,8 +4,9 @@ def compute_element_strain_energy(A_e, E_e, lambda_, mu):
     """
     Computes the strain energy of the element.
     """
-    E_e_squared = np.dot(E_e.T, E_e)
+    E_e_squared = np.dot(np.transpose(E_e), E_e)
     element_strain_energy = (lambda_ / 2) * np.trace(E_e)**2 + mu * np.trace(E_e_squared)
+    # element_strain_energy = (lambda_ / 2) * (np.trace(E_e)**2) + mu * (np.sum(np.multiply(E_e,E_e)))
 
     return element_strain_energy * A_e
 

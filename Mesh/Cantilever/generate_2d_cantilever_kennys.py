@@ -24,7 +24,7 @@ def generate_2d_cantilever_kennys(beam_length, beam_width, num_vertices_x_dir, n
             k10 = (i) + (j + 1) * (I + 1)
             k11 = (i + 1) + (j + 1) * (I + 1)
             e = 2 * (i + j * I)
-            if (i + j) % 2:
+            if (i + j+1) % 2:
                 T[e, :] = (k00, k01, k11)
                 T[e + 1, :] = (k00, k11, k10)
             else:
