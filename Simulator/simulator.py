@@ -100,6 +100,7 @@ class Simulator:
         velocities = [v_n]
         accelerations = [a_n]
         Es = [np.zeros([len(self.mesh_faces), 2,2])]
+        Ms = [M]
 
         # Main loop
         for i in tqdm(range(self.number_of_time_steps), desc="Running simulation"):
@@ -107,7 +108,7 @@ class Simulator:
             k, E = self.compute_stiffness_matrix(u_n)
 
             # Do simulation step
-            Minv = np.absolute(np.linalg.inv(M))
+            Minv = np.linalg.inv(M)
             damping_term = np.dot(C, v_n)
 
             # # Remove all forces after 1 sec.
@@ -148,11 +149,12 @@ class Simulator:
             velocities.append(v_n)
             accelerations.append(a_n_1)
             Es.append(E)
+            Ms.append(M)
 
             # Print time
             # print(f"i: {i}. Time: {time}")
 
-        return Result(times, displacements, velocities, accelerations, Es)
+        return Result(times, displacements, velocities, accelerations, Es, Ms)
 
     def compute_integral_N_squared(self, triangle_face):
         # Compute matrix using quadpy (quadpy is a quadrature package)
@@ -171,16 +173,6 @@ class Simulator:
         def N_k(x):
             return triangle_shape_function_k_helper(self.mesh_points, triangle_face, x)
 
-        n_i = scheme.integrate(lambda x: N_i(x), triangle)
-        n_j = scheme.integrate(lambda x: N_j(x), triangle)
-        n_k = scheme.integrate(lambda x: N_k(x), triangle)
-        test0 = n_i + n_j + n_k
-        test1 = N_i(np.array([0, 1]))
-        test2 = N_j(np.array([0, 1]))
-        test3 = N_k(np.array([0, 1]))
-        test4 = N_i(np.array([0.5, 0.5]))
-        test5 = N_j(np.array([0.5, 0.5]))
-        test6 = N_k(np.array([0.5, 0.5]))
         n_i_squared = scheme.integrate(lambda x: N_i(x) ** 2, triangle)
         n_j_squared = scheme.integrate(lambda x: N_j(x) ** 2, triangle)
         n_k_squared = scheme.integrate(lambda x: N_k(x) ** 2, triangle)
@@ -198,8 +190,6 @@ class Simulator:
             [0, n_ik, 0, n_jk, 0, n_k_squared]
         ]
         )
-
-
 
         return integral_N_square
 
@@ -222,7 +212,7 @@ class Simulator:
         def compute_element_damping_matrix(face_index):
             triangle_face = self.mesh_faces[face_index]
             integral_N_square = self.compute_integral_N_squared(triangle_face)
-            return integral_N_square
+            return integral_N_square * self.material_properties.density
 
         # Compute all element mass matrices
         all_C_e = np.array([compute_element_damping_matrix(i) for i in range(len(self.mesh_faces))])
@@ -231,7 +221,7 @@ class Simulator:
         C = self.assemble_square_matrix(all_C_e)
 
 
-        return C * self.material_properties.damping_coefficient * self.material_properties.density
+        return C * self.material_properties.damping_coefficient
 
     def compute_stiffness_matrix(self, u_n):
         def compute_element_stiffness_matrix(triangle_face, A_e):
@@ -388,7 +378,7 @@ class Simulator:
             f_g = np.zeros([2 * self.total_number_of_nodes])
             f_g[all_y_node_indices] = self.gravity[1]
 
-            P_0g = - self.all_V_e[0] * (self.material_properties.density * f_g)
+            P_0g = - self.all_V_e[0] * self.material_properties.density * f_g
 
             f_b += P_0g
 

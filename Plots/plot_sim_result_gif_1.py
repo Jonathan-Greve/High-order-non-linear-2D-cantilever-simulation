@@ -1,3 +1,5 @@
+import random
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -7,7 +9,7 @@ import io
 from PIL import Image
 from tqdm import tqdm
 
-def make_sim_result_gif_1(vertices, faces, result, num_nodes_x, num_nodes_y, traction, time, time_step_size):
+def make_sim_result_gif_1(vertices, faces, result, num_nodes_x, num_nodes_y, traction, time, time_step_size, file_name):
     n = num_nodes_x * num_nodes_y
 
     images = []
@@ -50,4 +52,4 @@ def make_sim_result_gif_1(vertices, faces, result, num_nodes_x, num_nodes_y, tra
         # images.append(plot_image)
 
     # kargs = {'duration': time_step_size*num_time_steps_per_frame}
-    imageio.mimsave('movie.gif', images, duration=time_step_size*num_time_steps_per_frame*time_rate)
+    imageio.mimsave(file_name + '.gif', images, duration=time_step_size*num_time_steps_per_frame*time_rate)
