@@ -21,7 +21,7 @@ def compute_triangle_element_area(vertices, triangle_face):
 
 
 def compute_all_element_areas(vertices, triangle_faces):
-    element_areas = np.zeros(triangle_faces.shape[0])
+    element_areas = np.zeros(triangle_faces.shape[0], dtype=np.float64)
 
     for i in range(triangle_faces.shape[0]):
         triangle_face_i = triangle_faces[i]
@@ -32,7 +32,7 @@ def compute_all_element_areas(vertices, triangle_faces):
 
 def validate_area(beam_length, beam_height, computed_areas):
     true_area = beam_length * beam_height
-    computed_area = np.sum(computed_areas)
+    computed_area = np.sum(computed_areas, dtype=np.float64)
 
     diff = true_area - computed_area
     if math.isclose(true_area, computed_area):

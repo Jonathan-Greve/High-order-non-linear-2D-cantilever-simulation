@@ -52,12 +52,12 @@ class Simulator:
                                                      self.number_of_nodes_x, self.number_of_nodes_y)
         # points, faces = generate_2d_cantilever_kennys(self.length, self.height,
         #                                                 self.number_of_nodes_x, self.number_of_nodes_y)
-        self.mesh_points = points
+        self.mesh_points = points.astype(np.float64)
         self.mesh_faces = faces
         self.all_A_e = compute_all_element_areas(self.mesh_points, self.mesh_faces)
 
         # All volume under shape functions
-        self.all_V_e = np.array([compute_shape_function_volume(self.mesh_points, face) for face in self.mesh_faces])
+        self.all_V_e = np.array([compute_shape_function_volume(self.mesh_points, face) for face in self.mesh_faces], dtype=np.float64)
 
         # Boundary node indices
         self.dirichlet_boundary_indices_x = \
@@ -89,9 +89,9 @@ class Simulator:
         # f[self.dirichlet_boundary_indices_x] = 0
         # f[self.dirichlet_boundary_indices_y] = 0
 
-        u_n = np.zeros(self.total_number_of_nodes * 2)
-        v_n = np.zeros(self.total_number_of_nodes * 2)
-        a_n = np.zeros(self.total_number_of_nodes * 2)
+        u_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
+        v_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
+        a_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
         a_n[np.arange(1, self.total_number_of_nodes * 2, 2)] = self.gravity[1]
         x_n = self.mesh_points.reshape([self.total_number_of_nodes * 2])
 
@@ -99,8 +99,9 @@ class Simulator:
         displacements = [u_n]
         velocities = [v_n]
         accelerations = [a_n]
-        Es = [np.zeros([len(self.mesh_faces), 2,2])]
+        Es = [np.zeros([len(self.mesh_faces), 2,2], dtype=np.float64)]
         Ms = [M]
+        damping_forces = [C@v_n]
 
         # Main loop
         for i in tqdm(range(self.number_of_time_steps), desc="Running simulation"):
@@ -150,6 +151,7 @@ class Simulator:
             accelerations.append(a_n_1)
             Es.append(E)
             Ms.append(M)
+            damping_forces.append(damping_term)
 
             # Print time
             # print(f"i: {i}. Time: {time}")
@@ -190,8 +192,7 @@ class Simulator:
             [0, n_ij, 0, n_j_squared, 0, n_jk],
             [n_ik, 0, n_jk, 0, n_k_squared, 0],
             [0, n_ik, 0, n_jk, 0, n_k_squared]
-        ]
-        )
+        ], dtype=np.float64)
 
         return integral_N_square
 
@@ -202,7 +203,7 @@ class Simulator:
             return integral_N_square * self.material_properties.density
 
         # Compute all element mass matrices
-        all_M_e = np.array([compute_element_mass_matrix(i) for i in range(len(self.mesh_faces))])
+        all_M_e = np.array([compute_element_mass_matrix(i) for i in range(len(self.mesh_faces))], dtype=np.float64)
 
         # Assemble the mass matrix
         M = self.assemble_square_matrix(all_M_e)
@@ -217,7 +218,7 @@ class Simulator:
             return integral_N_square * self.material_properties.density
 
         # Compute all element mass matrices
-        all_C_e = np.array([compute_element_damping_matrix(i) for i in range(len(self.mesh_faces))])
+        all_C_e = np.array([compute_element_damping_matrix(i) for i in range(len(self.mesh_faces))], dtype=np.float64)
 
         # Assemble the mass matrix
         C = self.assemble_square_matrix(all_C_e)
@@ -261,15 +262,15 @@ class Simulator:
             F_i = np.array([
                 [dN_iX * x_i, dN_iY * x_i],
                 [dN_iX * y_i, dN_iY * y_i],
-            ])
+            ], dtype=np.float64)
             F_j = np.array([
                 [dN_jX * x_j, dN_jY * x_j],
                 [dN_jX * y_j, dN_jY * y_j],
-            ])
+            ], dtype=np.float64)
             F_k = np.array([
                 [dN_kX * x_k, dN_kY * x_k],
                 [dN_kX * y_k, dN_kY * y_k],
-            ])
+            ], dtype=np.float64)
             F = F_i + F_j + F_k
             # print(f'Triangle {triangle_face}')
             # F = self.compute_F(
@@ -282,7 +283,7 @@ class Simulator:
             # )
 
             # Compute E
-            I = np.eye(2)
+            I = np.eye(2, dtype=np.float64)
             C = np.dot(np.transpose(F), F)
             E = (C - I) / 2.0
 
@@ -301,12 +302,12 @@ class Simulator:
                 (A_e * np.dot(np.dot(F, S), grad_j))[1],
                 (A_e * np.dot(np.dot(F, S), grad_k))[0],
                 (A_e * np.dot(np.dot(F, S), grad_k))[1]
-            ])
+            ], dtype=np.float64)
 
             return k_e, E, F
 
         # Computes all element stiffness matrices
-        all_k_e_matrices = np.zeros([len(self.mesh_faces), 6])
+        all_k_e_matrices = np.zeros([len(self.mesh_faces), 6], dtype=np.float64)
         all_Es = np.zeros([len(self.mesh_faces), 2, 2])
         all_Fs = np.zeros([len(self.mesh_faces), 2, 2])
         for i in range(len(self.mesh_faces)):
@@ -318,7 +319,7 @@ class Simulator:
             all_Fs[i] = F
 
         # Assemble the stiffness matrix
-        k = np.zeros([2 * self.total_number_of_nodes])
+        k = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
         for i in range(len(self.mesh_faces)):
             triangle_face = self.mesh_faces[i]
 
@@ -348,7 +349,7 @@ class Simulator:
         return k, all_Es
 
     def assemble_square_matrix(self, all_M_e):
-        matrix = np.zeros([2 * self.total_number_of_nodes, 2 * self.total_number_of_nodes])
+        matrix = np.zeros([2 * self.total_number_of_nodes, 2 * self.total_number_of_nodes], dtype=np.float64)
         for i in range(len(self.mesh_faces)):
             triangle_face = self.mesh_faces[i]
 
@@ -386,17 +387,17 @@ class Simulator:
                     value,
                     0,
                     value
-                ])
+                ], dtype=np.float64)
 
                 return f_g_e
 
-            all_gravity_terms = np.zeros([len(self.mesh_faces), 6])
+            all_gravity_terms = np.zeros([len(self.mesh_faces), 6], dtype=np.float64)
             for i in range(len(self.mesh_faces)):
                 f_g_e = compute_element_gravity_term(i)
                 all_gravity_terms[i] = f_g_e
 
             # Assemble the stiffness matrix
-            f_g = np.zeros([2 * self.total_number_of_nodes])
+            f_g = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
             for i in range(len(self.mesh_faces)):
                 triangle_face = self.mesh_faces[i]
 
@@ -443,7 +444,7 @@ class Simulator:
 
         line_element_length = self.height / (len(traction_edge_indices_y) - 1)
 
-        f_t = np.zeros([2 * self.total_number_of_nodes])
+        f_t = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
 
         scaled_traction = line_element_length * np.array(self.traction_force)
 
@@ -470,12 +471,12 @@ class Simulator:
         D = np.array([
             [x_ij[0], x_ik[0]],
             [x_ij[1], x_ik[1]],
-        ])
+        ], dtype=np.float64)
 
         D_0 = np.array([
             [X_ij[0], X_ik[0]],
             [X_ij[1], X_ik[1]],
-        ])
+        ], dtype=np.float64)
 
         F = D @ np.linalg.inv(D_0)
         return F

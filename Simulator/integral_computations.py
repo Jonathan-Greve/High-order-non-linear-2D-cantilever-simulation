@@ -1,3 +1,4 @@
+import numpy as np
 import quadpy
 
 from Mesh.Cantilever.area_computations import compute_triangle_element_area
@@ -23,6 +24,6 @@ def compute_shape_function_volume(points, face):
         return triangle_shape_function_i_helper(points, face, x)
 
 
-    n_i = scheme.integrate(lambda x: N_i(x), triangle)
+    n_i = scheme.integrate(lambda x: N_i(x.astype(np.float64)), triangle)
 
     return n_i

@@ -15,8 +15,8 @@ def generate_2d_cantilever_delaunay(beam_length, beam_width, num_vertices_x_dir,
 
     # Generate a 2D mesh using Delaunay triangulation.
     # https://docs.scipy.org/doc/scipy/reference/generated/scipy.spatial.Delaunay.html
-    x = np.linspace(0, beam_length, num_vertices_x_dir)  # x-coordinates
-    y = np.linspace(0, beam_width, num_vertices_y_dir)  # y-coordinates
+    x = np.linspace(0, beam_length, num_vertices_x_dir, dtype=np.float64)  # x-coordinates
+    y = np.linspace(0, beam_width, num_vertices_y_dir, dtype=np.float64)  # y-coordinates
     xv, yv = np.meshgrid(x, y)  # x-y coordinates
     xv = xv.flatten()
     yv = yv.flatten()
