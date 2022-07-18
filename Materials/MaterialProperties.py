@@ -74,7 +74,7 @@ class MaterialPropertiesQuery:
             youngs_modulus=10.0e5,
             poisson_ratio=0.3,
             density=1000,
-            damping_coefficient=0.00)
+            damping_coefficient=0.0004)
 
     def get_material_properties(self, material_name):
         if material_name in self.material_properties:
