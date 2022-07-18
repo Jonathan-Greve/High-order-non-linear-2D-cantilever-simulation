@@ -105,6 +105,7 @@ class Simulator:
 
         # Main loop
         for i in tqdm(range(self.number_of_time_steps), desc="Running simulation"):
+            time_step_size = np.min([self.time_step, self.number_of_time_steps*self.time_step - time])
             # Compute stiffness matrix
             k, E = self.compute_stiffness_matrix(u_n)
 
@@ -156,7 +157,7 @@ class Simulator:
             # Print time
             # print(f"i: {i}. Time: {time}")
 
-        return Result(times, displacements, velocities, accelerations, Es, Ms)
+        return Result(times, displacements, velocities, accelerations, Es, Ms, damping_forces)
 
     def compute_integral_N_squared(self, triangle_face):
         # Compute matrix using quadpy (quadpy is a quadrature package)

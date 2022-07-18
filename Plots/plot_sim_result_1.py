@@ -9,7 +9,7 @@ def plot_sim_result_1(vertices, faces, u, num_nodes_x, num_nodes_y, traction, ti
     print(f'Faces: {faces.shape}')
     print(f'uuu: {u.shape}')
     print(f'n: {n}')
-    reference, _ = plt.triplot(vertices[:,0], vertices[:,1], faces, label='Reference')
+    reference, _ = plt.triplot(vertices[:,0], vertices[:,1], faces, label='Reference', alpha=0.3)
     deformed, _ = plt.triplot(vertices[:,0] + u[np.arange(0, 2*n-1, 2)], vertices[:,1] + u[np.arange(0, 2*n-1, 2)+1], faces, label='Deformed')
     plt.legend(handles=[reference, deformed], loc='upper left')
     plt.xlabel(r'$X_1$')

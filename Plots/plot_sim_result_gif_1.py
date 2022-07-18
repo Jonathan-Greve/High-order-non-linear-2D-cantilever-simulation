@@ -25,7 +25,7 @@ def make_sim_result_gif_1(vertices, faces, result, num_nodes_x, num_nodes_y, tra
         # Do some plotting here
         ax = fig.add_subplot(111)
 
-        reference, _ = ax.triplot(vertices[:,0], vertices[:,1], faces, label='Reference')
+        reference, _ = ax.triplot(vertices[:,0], vertices[:,1], faces, label='Reference', alpha=0.3)
         deformed, _ = ax.triplot(vertices[:,0] + result.nodal_displacements[i][np.arange(0, 2*n-1, 2)], vertices[:,1] + result.nodal_displacements[i][np.arange(0, 2*n-1, 2)+1], faces, label='Deformed')
         ax.legend(handles=[reference, deformed], loc='upper left')
         ax.set_xlabel(r'$X_1$')
