@@ -23,4 +23,7 @@ def generate_2d_cantilever_delaunay(beam_length, beam_width, num_vertices_x_dir,
     points = np.vstack((xv, yv)).T
     tri = spatial.Delaunay(points)
 
+    tri.points[:, 0] = tri.points[:, 0] - beam_length / 2.0
+    tri.points[:, 1] = tri.points[:, 1] - beam_width / 2.0
+
     return tri.points, tri.simplices

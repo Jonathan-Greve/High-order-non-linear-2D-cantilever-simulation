@@ -50,8 +50,8 @@ class Simulator:
         # Initialize the cantilever mesh
         points, faces = generate_2d_cantilever_delaunay(self.length, self.height,
                                                      self.number_of_nodes_x, self.number_of_nodes_y)
-        points, faces = generate_2d_cantilever_kennys(self.length, self.height,
-                                                        self.number_of_nodes_x, self.number_of_nodes_y)
+        # points, faces = generate_2d_cantilever_kennys(self.length, self.height,
+        #                                                 self.number_of_nodes_x, self.number_of_nodes_y)
         self.mesh_points = points
         self.mesh_faces = faces
         self.all_A_e = compute_all_element_areas(self.mesh_points, self.mesh_faces)
@@ -115,8 +115,8 @@ class Simulator:
             # if (i * self.time_step > 1):
             #     f = f * 0
 
-            test = f - damping_term - k
-            a_n_1 = np.dot(Minv,  test)
+            forces = f - damping_term - k
+            a_n_1 = np.dot(Minv,  forces)
 
             # M_condition_num = np.linalg.cond(M)
             # Minv_condition_num = np.linalg.cond(Minv)
@@ -172,6 +172,8 @@ class Simulator:
 
         def N_k(x):
             return triangle_shape_function_k_helper(self.mesh_points, triangle_face, x)
+
+        test = scheme.integrate(lambda x: N_i(x), triangle)
 
         n_i_squared = scheme.integrate(lambda x: N_i(x) ** 2, triangle)
         n_j_squared = scheme.integrate(lambda x: N_j(x) ** 2, triangle)
@@ -248,36 +250,36 @@ class Simulator:
             dX_ji = X_j - X_i
 
             # Triangle shape function derivatives
-            dN_iX = - dY_kj / (2 * A_e)
-            dN_jX = - dY_ik / (2 * A_e)
-            dN_kX = - dY_ji / (2 * A_e)
-            dN_iY = dX_kj / (2 * A_e)
-            dN_jY = dX_ik / (2 * A_e)
-            dN_kY = dX_ji / (2 * A_e)
+            dN_iX = dY_kj / (2 * A_e)
+            dN_jX = dY_ik / (2 * A_e)
+            dN_kX = dY_ji / (2 * A_e)
+            dN_iY = -dX_kj / (2 * A_e)
+            dN_jY = -dX_ik / (2 * A_e)
+            dN_kY = -dX_ji / (2 * A_e)
 
             # Compute F
-            # F_i = np.array([
-            #     [dN_iX * x_i, dN_iY * x_i],
-            #     [dN_iX * y_i, dN_iY * y_i],
-            # ])
-            # F_j = np.array([
-            #     [dN_jX * x_j, dN_jY * x_j],
-            #     [dN_jX * y_j, dN_jY * y_j],
-            # ])
-            # F_k = np.array([
-            #     [dN_kX * x_k, dN_kY * x_k],
-            #     [dN_kX * y_k, dN_kY * y_k],
-            # ])
-            # F = F_i + F_j + F_k
+            F_i = np.array([
+                [dN_iX * x_i, dN_iY * x_i],
+                [dN_iX * y_i, dN_iY * y_i],
+            ])
+            F_j = np.array([
+                [dN_jX * x_j, dN_jY * x_j],
+                [dN_jX * y_j, dN_jY * y_j],
+            ])
+            F_k = np.array([
+                [dN_kX * x_k, dN_kY * x_k],
+                [dN_kX * y_k, dN_kY * y_k],
+            ])
+            F = F_i + F_j + F_k
             # print(f'Triangle {triangle_face}')
-            F = self.compute_F(
-                np.array([x_i, y_i]),
-                np.array([x_j, y_j]),
-                np.array([x_k, y_k]),
-                np.array([X_i, Y_i]),
-                np.array([X_j, Y_j]),
-                np.array([X_k, Y_k]),
-            )
+            # F = self.compute_F(
+            #     np.array([x_i, y_i]),
+            #     np.array([x_j, y_j]),
+            #     np.array([x_k, y_k]),
+            #     np.array([X_i, Y_i]),
+            #     np.array([X_j, Y_j]),
+            #     np.array([X_k, Y_k]),
+            # )
 
             # Compute E
             I = np.eye(2)
@@ -293,12 +295,12 @@ class Simulator:
             grad_k = np.array([dN_kX, dN_kY])
 
             k_e = np.array([
-                (A_e * F @ S @ grad_i)[0],
-                (A_e * F @ S @ grad_i)[1],
-                (A_e * F @ S @ grad_j)[0],
-                (A_e * F @ S @ grad_j)[1],
-                (A_e * F @ S @ grad_k)[0],
-                (A_e * F @ S @ grad_k)[1]
+                (A_e * np.dot(np.dot(F, S), grad_i))[0],
+                (A_e * np.dot(np.dot(F, S), grad_i))[1],
+                (A_e * np.dot(np.dot(F, S), grad_j))[0],
+                (A_e * np.dot(np.dot(F, S), grad_j))[1],
+                (A_e * np.dot(np.dot(F, S), grad_k))[0],
+                (A_e * np.dot(np.dot(F, S), grad_k))[1]
             ])
 
             return k_e, E, F
@@ -373,12 +375,49 @@ class Simulator:
 
         # Add gravity force to all nodes
         if include_gravity:
+            def compute_element_gravity_term(face_index):
+                V_e = self.all_V_e[face_index]
 
-            all_y_node_indices = np.arange(1, 2*self.total_number_of_nodes, 2)
+                value = V_e * self.material_properties.density * self.gravity[1]
+                f_g_e = np.array([
+                    0,
+                    value,
+                    0,
+                    value,
+                    0,
+                    value
+                ])
+
+                return f_g_e
+
+            all_gravity_terms = np.zeros([len(self.mesh_faces), 6])
+            for i in range(len(self.mesh_faces)):
+                f_g_e = compute_element_gravity_term(i)
+                all_gravity_terms[i] = f_g_e
+
+            # Assemble the stiffness matrix
             f_g = np.zeros([2 * self.total_number_of_nodes])
-            f_g[all_y_node_indices] = self.gravity[1]
+            for i in range(len(self.mesh_faces)):
+                triangle_face = self.mesh_faces[i]
 
-            P_0g = - self.all_V_e[0] * self.material_properties.density * f_g
+                node_i_idx = triangle_face[0]
+                node_j_idx = triangle_face[1]
+                node_k_idx = triangle_face[2]
+
+                # The indices of i_x, i_y, j_x, j_y, k_x, k_y
+                global_indices_list = np.array([
+                    node_i_idx * 2,
+                    node_i_idx * 2 + 1,
+                    node_j_idx * 2,
+                    node_j_idx * 2 + 1,
+                    node_k_idx * 2,
+                    node_k_idx * 2 + 1
+                ])
+                #         print(global_indices_list)
+
+                f_g[global_indices_list] += all_gravity_terms[i]
+
+            P_0g = - f_g
 
             f_b += P_0g
 
