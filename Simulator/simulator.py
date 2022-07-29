@@ -3,6 +3,7 @@
 import numpy as np
 import quadpy
 from tqdm import tqdm
+import cupy as cp
 
 from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas
@@ -64,8 +65,6 @@ class Simulator:
             np.arange(0, 2 * self.total_number_of_nodes - 1, self.number_of_nodes_x * 2)
         self.dirichlet_boundary_indices_y = self.dirichlet_boundary_indices_x + 1
 
-
-
     def simulate(self):
         # Initialize variables
         time = 0.0
@@ -80,6 +79,7 @@ class Simulator:
 
         # Precompute some variables
         M = self.compute_mass_matrix()
+        Minv = np.linalg.inv(M)
         C = self.compute_damping_matrix()
         f_t = self.compute_traction_forces()
         f_g = self.compute_body_forces(include_gravity=True)
@@ -110,7 +110,6 @@ class Simulator:
             k, E = self.compute_stiffness_matrix(u_n)
 
             # Do simulation step
-            Minv = np.linalg.inv(M)
             damping_term = np.dot(C, v_n)
 
             # # Remove all forces after 1 sec.
@@ -154,10 +153,11 @@ class Simulator:
             Ms.append(M)
             damping_forces.append(damping_term)
 
+
             # Print time
             # print(f"i: {i}. Time: {time}")
 
-        return Result(times, displacements, velocities, accelerations, Es, Ms, damping_forces)
+        return Result(times, displacements, velocities, accelerations, Es, Ms, damping_forces, f_g)
 
     def compute_integral_N_squared(self, triangle_face):
         # Compute matrix using quadpy (quadpy is a quadrature package)
@@ -232,16 +232,24 @@ class Simulator:
             node_i_idx = triangle_face[0]
             node_j_idx = triangle_face[1]
             node_k_idx = triangle_face[2]
+            
+            node_i_global_index_x = node_i_idx * 2
+            node_i_global_index_y = node_i_global_index_x + 1
+            node_j_global_index_x = node_j_idx * 2
+            node_j_global_index_y = node_j_global_index_x + 1
+            node_k_global_index_x = node_k_idx * 2
+            node_k_global_index_y = node_k_global_index_x + 1
 
             # Material coordinates
             X_i, Y_i = self.mesh_points[node_i_idx]
             X_j, Y_j = self.mesh_points[node_j_idx]
             X_k, Y_k = self.mesh_points[node_k_idx]
 
+
             # Spatial coordinates
-            x_i, y_i = (X_i + u_n[node_i_idx*2]), (Y_i + u_n[node_i_idx*2 + 1])
-            x_j, y_j = (X_j + u_n[node_j_idx*2]), (Y_j + u_n[node_j_idx*2 + 1])
-            x_k, y_k = (X_k + u_n[node_k_idx*2]), (Y_k + u_n[node_k_idx*2 + 1])
+            x_i, y_i = (X_i + u_n[node_i_global_index_x]), (Y_i + u_n[node_i_global_index_y])
+            x_j, y_j = (X_j + u_n[node_j_global_index_x]), (Y_j + u_n[node_j_global_index_y])
+            x_k, y_k = (X_k + u_n[node_k_global_index_x]), (Y_k + u_n[node_k_global_index_y])
 
             # Triangle material vectors
             dY_kj = Y_k - Y_j
@@ -262,15 +270,15 @@ class Simulator:
             # Compute F
             F_i = np.array([
                 [dN_iX * x_i, dN_iY * x_i],
-                [dN_iX * y_i, dN_iY * y_i],
+                [dN_iX * y_i, dN_iY * y_i]
             ], dtype=np.float64)
             F_j = np.array([
                 [dN_jX * x_j, dN_jY * x_j],
-                [dN_jX * y_j, dN_jY * y_j],
+                [dN_jX * y_j, dN_jY * y_j]
             ], dtype=np.float64)
             F_k = np.array([
                 [dN_kX * x_k, dN_kY * x_k],
-                [dN_kX * y_k, dN_kY * y_k],
+                [dN_kX * y_k, dN_kY * y_k]
             ], dtype=np.float64)
             F = F_i + F_j + F_k
             # print(f'Triangle {triangle_face}')
@@ -296,13 +304,17 @@ class Simulator:
             grad_j = np.array([dN_jX, dN_jY])
             grad_k = np.array([dN_kX, dN_kY])
 
+
+            res_i = A_e * np.dot(np.dot(F, S), grad_i)
+            res_j = A_e * np.dot(np.dot(F, S), grad_j)
+            res_k = A_e * np.dot(np.dot(F, S), grad_k)
             k_e = np.array([
-                (A_e * np.dot(np.dot(F, S), grad_i))[0],
-                (A_e * np.dot(np.dot(F, S), grad_i))[1],
-                (A_e * np.dot(np.dot(F, S), grad_j))[0],
-                (A_e * np.dot(np.dot(F, S), grad_j))[1],
-                (A_e * np.dot(np.dot(F, S), grad_k))[0],
-                (A_e * np.dot(np.dot(F, S), grad_k))[1]
+                res_i[0],
+                res_i[1],
+                res_j[0],
+                res_j[1],
+                res_k[0],
+                res_k[1]
             ], dtype=np.float64)
 
             return k_e, E, F
@@ -358,14 +370,21 @@ class Simulator:
             node_j_idx = triangle_face[1]
             node_k_idx = triangle_face[2]
 
+            node_i_global_index_x = node_i_idx * 2
+            node_i_global_index_y = node_i_global_index_x + 1
+            node_j_global_index_x = node_j_idx * 2
+            node_j_global_index_y = node_j_global_index_x + 1
+            node_k_global_index_x = node_k_idx * 2
+            node_k_global_index_y = node_k_global_index_x + 1
+
             # The indices of i_x, i_y, j_x, j_y, k_x, k_y
             global_indices_list = np.array([
-                node_i_idx * 2,
-                node_i_idx * 2 + 1,
-                node_j_idx * 2,
-                node_j_idx * 2 + 1,
-                node_k_idx * 2,
-                node_k_idx * 2 + 1
+                node_i_global_index_x,
+                node_i_global_index_y,
+                node_j_global_index_x,
+                node_j_global_index_y,
+                node_k_global_index_x,
+                node_k_global_index_y
             ])
 
             matrix[global_indices_list.reshape([6, 1]), global_indices_list] += all_M_e[i]
@@ -406,14 +425,21 @@ class Simulator:
                 node_j_idx = triangle_face[1]
                 node_k_idx = triangle_face[2]
 
+                node_i_global_index_x = node_i_idx * 2
+                node_i_global_index_y = node_i_global_index_x + 1
+                node_j_global_index_x = node_j_idx * 2
+                node_j_global_index_y = node_j_global_index_x + 1
+                node_k_global_index_x = node_k_idx * 2
+                node_k_global_index_y = node_k_global_index_x + 1
+
                 # The indices of i_x, i_y, j_x, j_y, k_x, k_y
                 global_indices_list = np.array([
-                    node_i_idx * 2,
-                    node_i_idx * 2 + 1,
-                    node_j_idx * 2,
-                    node_j_idx * 2 + 1,
-                    node_k_idx * 2,
-                    node_k_idx * 2 + 1
+                    node_i_global_index_x,
+                    node_i_global_index_y,
+                    node_j_global_index_x,
+                    node_j_global_index_y,
+                    node_k_global_index_x,
+                    node_k_global_index_y
                 ])
                 #         print(global_indices_list)
 

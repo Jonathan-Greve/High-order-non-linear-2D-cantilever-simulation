@@ -22,6 +22,9 @@ def plot_sim_result_energies_1(vertices, faces, density, result: Result, gravity
     potential_energies = np.array([compute_potential_energy(density, vertices.reshape([len(displacements[i])]) + displacements[i], faces, gravity, areas) for i in tqdm(range(len(displacements)), desc="Computing potential energies")])
     strain_energies = np.array([compute_strain_energy(i, faces, result, areas, lambda_, mu) for i in tqdm(range(len(result.Es)), desc="Computing strain energies")])
     total_energy = kinetic_energies_Mv + potential_energies + strain_energies
+    print(np.max(kinetic_energies_Mv))
+    print(np.min(potential_energies))
+    print(np.max(strain_energies))
 
     # kinetic_energy_plot = plt.plot(result.time_steps, kinetic_energies, label='Kinetic energy', color='cyan', linestyle='-.')
     kinetic_energy_plot_Mv = plt.plot(result.time_steps, kinetic_energies_Mv, label='Kinetic energy', color='red', linestyle='solid', alpha=0.5)

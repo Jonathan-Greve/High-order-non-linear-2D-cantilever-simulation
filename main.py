@@ -17,7 +17,7 @@ def main():
     material_properties_query = mat_prop.MaterialPropertiesQuery()
 
     # Select material
-    material_name = "Rubber"
+    material_name = "Test 1"
     material_properties = material_properties_query.get_material_properties(material_name)
 
     # Print material properties
@@ -31,18 +31,18 @@ def main():
     print("----------------------------------------------------")
 
     # Setup simulation settings
-    time_to_simulate = 1.8  # Seconds
-    time_step = 0.0002  # Seconds
+    time_to_simulate = 1.8 * 5  # Seconds
+    time_step = 0.001  # Seconds
     # time_step = 1 / 30
     number_of_time_steps = math.ceil(time_to_simulate / time_step)
 
     # Cantilever settings
     length = 6.0  # Meters
     height = 2.0  # Meters
-    number_of_nodes_x = 30 # Number of nodes in x direction
-    number_of_nodes_y = 10 # Number of nodes in y direction
+    number_of_nodes_x = 40 # Number of nodes in x direction
+    number_of_nodes_y = 20 # Number of nodes in y direction
     traction_force = [0, -00000.0]  # Newtons
-    gravity = [0, -9.82]  # m/s^2
+    gravity = [0, -1]  # m/s^2
 
     # Print simulation settings
     print("----------------------------------------------------")
