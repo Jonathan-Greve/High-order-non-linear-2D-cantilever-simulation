@@ -3,7 +3,6 @@
 import numpy as np
 import quadpy
 from tqdm import tqdm
-import cupy as cp
 
 from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas

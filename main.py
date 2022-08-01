@@ -32,17 +32,17 @@ def main():
 
     # Setup simulation settings
     time_to_simulate = 1.8 * 5  # Seconds
-    time_step = 0.001  # Seconds
+    time_step = 0.0001  # Seconds
     # time_step = 1 / 30
     number_of_time_steps = math.ceil(time_to_simulate / time_step)
 
     # Cantilever settings
     length = 6.0  # Meters
     height = 2.0  # Meters
-    number_of_nodes_x = 40 # Number of nodes in x direction
+    number_of_nodes_x = 60 # Number of nodes in x direction
     number_of_nodes_y = 20 # Number of nodes in y direction
-    traction_force = [0, -00000.0]  # Newtons
-    gravity = [0, -1]  # m/s^2
+    traction_force = [0, -10000.0]  # Newtons
+    gravity = [0, -0]  # m/s^2
 
     # Print simulation settings
     print("----------------------------------------------------")
