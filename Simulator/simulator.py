@@ -116,6 +116,8 @@ class Simulator:
             #     f = f * 0
 
             forces = f - damping_term - k
+            # forces[np.abs(forces) < 1e-10] = 0
+
             a_n_1 = np.dot(Minv,  forces)
 
             # M_condition_num = np.linalg.cond(M)
@@ -129,6 +131,7 @@ class Simulator:
             v_n_1 = v_n + self.time_step * a_n_1
             v_n_1[self.dirichlet_boundary_indices_x] = 0
             v_n_1[self.dirichlet_boundary_indices_y] = 0
+            v_n_1[np.abs(v_n_1) < 1e-10] = 0
 
             x_n_1 = x_n + self.time_step * v_n_1
 
@@ -398,14 +401,15 @@ class Simulator:
             def compute_element_gravity_term(face_index):
                 V_e = self.all_V_e[face_index]
 
-                value = V_e * self.material_properties.density * self.gravity[1]
+                value_x = V_e * self.material_properties.density * self.gravity[0]
+                value_y = V_e * self.material_properties.density * self.gravity[1]
                 f_g_e = np.array([
-                    0,
-                    value,
-                    0,
-                    value,
-                    0,
-                    value
+                    value_x,
+                    value_y,
+                    value_x,
+                    value_y,
+                    value_x,
+                    value_y
                 ], dtype=np.float64)
 
                 return f_g_e
