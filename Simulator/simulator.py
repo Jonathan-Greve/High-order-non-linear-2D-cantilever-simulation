@@ -8,6 +8,7 @@ from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas
 from Mesh.Cantilever.generate_2d_cantilever_delaunay import generate_2d_cantilever_delaunay
 from Mesh.Cantilever.generate_2d_cantilever_kennys import generate_2d_cantilever_kennys
+from Mesh.HigherOrderMesh.generate_FEM_mesh import generate_FEM_mesh
 from Simulator.integral_computations import compute_shape_function_volume
 from Simulator.result import Result
 from Simulator.triangle_shape_functions import triangle_shape_function_i_helper, \
@@ -63,6 +64,9 @@ class Simulator:
         self.dirichlet_boundary_indices_x = \
             np.arange(0, 2 * self.total_number_of_nodes - 1, self.number_of_nodes_x * 2)
         self.dirichlet_boundary_indices_y = self.dirichlet_boundary_indices_x + 1
+
+        # FEM mesh
+        self.fem_mesh_points = generate_FEM_mesh(self.mesh_points, self.mesh_faces, 3)
 
     def simulate(self):
         # Initialize variables
