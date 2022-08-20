@@ -225,8 +225,8 @@ class Simulator:
 
         # N is 2xm so the "square" matrix given by the outer product with itself is 2m x 2m
         integral_N_square = np.zeros((m*2, m*2))
-        for i in range(6):
-            for j in range(6):
+        for i in range(2 * m):
+            for j in range(2 * m):
                 if i % 2 == 0 and j % 2 != 0:
                     continue
                 if i % 2 != 0 and j % 2 == 0:
@@ -438,14 +438,27 @@ class Simulator:
 
         # Add gravity force to all nodes
         if include_gravity:
+            scheme = quadpy.t2.get_good_scheme(self.element_order + 1)
+
             def compute_element_gravity_term(face_index):
-                V_e = self.all_V_e[face_index]
+                triangle = self.mesh_points[self.mesh_faces[face_index]]
 
-                value_x = V_e * self.material_properties.density * self.gravity[0]
-                value_y = V_e * self.material_properties.density * self.gravity[1]
+                triangle_encoding = self.FEM_encoding[face_index]
+                global_indices, ijk_indices = decode_triangle_indices(triangle_encoding, self.element_order)
 
-                # Compute the element gravity force
-                f_g_e = np.array([value_x, value_y] * m)
+                N_int_values = np.zeros([2, 2*m])
+                for i in range(len(global_indices)):
+                    def f(x):
+                        xi = cartesian_to_barycentric(x, triangle)
+                        shape_function_val = silvester_shape_function(ijk_indices[i], xi,
+                                                                  self.element_order)
+                        return shape_function_val
+
+                    int_val = scheme.integrate(f, triangle)
+                    N_int_values[0, i*2] = int_val
+                    N_int_values[1, 1 + i*2] = int_val
+
+                f_g_e = self.material_properties.density * N_int_values.T@self.gravity
 
                 return f_g_e
 
