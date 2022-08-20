@@ -8,7 +8,10 @@ from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas
 from Mesh.Cantilever.generate_2d_cantilever_delaunay import generate_2d_cantilever_delaunay
 from Mesh.Cantilever.generate_2d_cantilever_kennys import generate_2d_cantilever_kennys
+from Mesh.HigherOrderMesh.decode_triangle_indices import decode_triangle_indices
 from Mesh.HigherOrderMesh.generate_FEM_mesh import generate_FEM_mesh
+from Simulator.HigherOrderElements.shape_functions import silvester_shape_function
+from Simulator.cartesian_to_barycentric import cartesian_to_barycentric
 from Simulator.integral_computations import compute_shape_function_volume
 from Simulator.result import Result
 from Simulator.triangle_shape_functions import triangle_shape_function_i_helper, \
@@ -17,7 +20,8 @@ from Simulator.triangle_shape_functions import triangle_shape_function_i_helper,
 
 class Simulator:
     def __init__(self, number_of_time_steps, time_step, material_properties,
-                 length, height, number_of_nodes_x, number_of_nodes_y, traction_force, gravity):
+                 length, height, number_of_nodes_x, number_of_nodes_y, traction_force, gravity,
+                 element_order=1):
         # Simulation settings
         self.number_of_time_steps = number_of_time_steps
         self.time_step = time_step
@@ -46,7 +50,9 @@ class Simulator:
         self.number_of_nodes_x = number_of_nodes_x
         self.number_of_nodes_y = number_of_nodes_y
         self.traction_force = traction_force
-        self.total_number_of_nodes = self.number_of_nodes_x * self.number_of_nodes_y
+
+        # Element settings
+        self.element_order = element_order
 
         # Initialize the cantilever mesh
         points, faces = generate_2d_cantilever_delaunay(self.length, self.height,
@@ -60,13 +66,48 @@ class Simulator:
         # All volume under shape functions
         self.all_V_e = np.array([compute_shape_function_volume(self.mesh_points, face) for face in self.mesh_faces], dtype=np.float64)
 
+
+        # FEM mesh vertices, ijk_index for every V in FEM_V, global indice encoding for every V in FEM_V
+        self.FEM_V, self.FEM_encoding = generate_FEM_mesh(self.mesh_points, self.mesh_faces, self.element_order)
+        self.total_number_of_nodes = len(self.FEM_V)
+
         # Boundary node indices
-        self.dirichlet_boundary_indices_x = \
-            np.arange(0, 2 * self.total_number_of_nodes - 1, self.number_of_nodes_x * 2)
+        self.boundary_len = 0.0001
+        self.dirichlet_boundary_indices_x = []
+        for i, vertex in enumerate(self.FEM_V):
+            if vertex[0] < 0 - (self.length / 2) + self.boundary_len:
+                self.dirichlet_boundary_indices_x.append(2*i)
+
+        self.dirichlet_boundary_indices_x = np.array(self.dirichlet_boundary_indices_x, dtype=np.int32)
         self.dirichlet_boundary_indices_y = self.dirichlet_boundary_indices_x + 1
 
-        # FEM mesh
-        self.fem_mesh_points = generate_FEM_mesh(self.mesh_points, self.mesh_faces, 3)
+        def check_if_traction_node(vertex):
+            if vertex[0] > 0 + (self.length / 2) - self.boundary_len:
+                return True
+            else:
+                return False
+
+        # list of (encoding_index, edge_index). Edge index: 0 for ij, 1 for jk, 2 for ki
+        self.traction_encodings = []
+        for i, encoding in enumerate(self.FEM_encoding):
+            global_indices, ijk_indices = decode_triangle_indices(encoding, self.element_order)
+
+            is_i_traction_node = check_if_traction_node(self.FEM_V[global_indices[0]])
+            is_j_traction_node = check_if_traction_node(self.FEM_V[global_indices[1]])
+            is_k_traction_node = check_if_traction_node(self.FEM_V[global_indices[2]])
+
+            # Check ij-edge
+            if is_i_traction_node and is_j_traction_node:
+                self.traction_encodings.append((i, 0))
+
+            # Check jk-edge
+            if is_j_traction_node and is_k_traction_node:
+                self.traction_encodings.append((i, 1))
+            # Check ki-edge
+            if is_k_traction_node and is_i_traction_node:
+                self.traction_encodings.append((i, 2))
+
+        print("Simulator initialized")
 
     def simulate(self):
         # Initialize variables
@@ -165,48 +206,52 @@ class Simulator:
 
         return Result(times, displacements, velocities, accelerations, Es, Ms, damping_forces, f_g)
 
-    def compute_integral_N_squared(self, triangle_face):
+    def compute_integral_N_squared(self, triangle_encoding):
         # Compute matrix using quadpy (quadpy is a quadrature package)
-        triangle = self.mesh_points[triangle_face]
+        global_indices, ijk_indices = decode_triangle_indices(triangle_encoding, self.element_order)
+        V_e = self.FEM_V[global_indices]
 
-        # get a "good" scheme of degree 10. (Even 2 should be enough since be use linear elements
-        # and we multiply them to get a second order polynomial)
-        scheme = quadpy.t2.get_good_scheme(10)
+        # Number of nodes
+        m = (self.element_order + 1) * (self.element_order + 2) // 2
+        if len(global_indices) != m:
+            raise Exception("Number of nodes in element is not correct")
 
-        def N_i(x):
-            return triangle_shape_function_i_helper(self.mesh_points, triangle_face, x)
+        i,j,k = global_indices[0:3]
 
-        def N_j(x):
-            return triangle_shape_function_j_helper(self.mesh_points, triangle_face, x)
+        # Corner vertices of triangle
+        triangle = self.mesh_points[[i,j,k]]
 
-        def N_k(x):
-            return triangle_shape_function_k_helper(self.mesh_points, triangle_face, x)
+        scheme = quadpy.t2.get_good_scheme(self.element_order+1)
 
-        test = scheme.integrate(lambda x: N_i(x), triangle)
+        # N is 2xm so the "square" matrix given by the outer product with itself is 2m x 2m
+        integral_N_square = np.zeros((m*2, m*2))
+        for i in range(6):
+            for j in range(6):
+                if i % 2 == 0 and j % 2 != 0:
+                    continue
+                if i % 2 != 0 and j % 2 == 0:
+                    continue
+                if i == j:
+                    def f(x):
+                        xi = cartesian_to_barycentric(x, triangle)
+                        shape_function = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
+                        return shape_function ** 2
+                else:
+                    def f(x):
+                        xi = cartesian_to_barycentric(x, triangle)
+                        shape_function_1 = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
+                        shape_function_2 = silvester_shape_function(ijk_indices[int(j / 2)], xi, self.element_order)
 
-        n_i_squared = scheme.integrate(lambda x: N_i(x) ** 2, triangle)
-        n_j_squared = scheme.integrate(lambda x: N_j(x) ** 2, triangle)
-        n_k_squared = scheme.integrate(lambda x: N_k(x) ** 2, triangle)
+                        return shape_function_1 * shape_function_2
 
-        n_ij = scheme.integrate(lambda x: N_i(x) * N_j(x), triangle)
-        n_ik = scheme.integrate(lambda x: N_i(x) * N_k(x), triangle)
-        n_jk = scheme.integrate(lambda x: N_j(x) * N_k(x), triangle)
-
-        integral_N_square = np.array([
-            [n_i_squared, 0, n_ij, 0, n_ik, 0],
-            [0, n_i_squared, 0, n_ij, 0, n_ik],
-            [n_ij, 0, n_j_squared, 0, n_jk, 0],
-            [0, n_ij, 0, n_j_squared, 0, n_jk],
-            [n_ik, 0, n_jk, 0, n_k_squared, 0],
-            [0, n_ik, 0, n_jk, 0, n_k_squared]
-        ], dtype=np.float64)
+                integral_N_square[i,j] = scheme.integrate(f, triangle)
 
         return integral_N_square
 
     def compute_mass_matrix(self):
         def compute_element_mass_matrix(face_index):
-            triangle_face = self.mesh_faces[face_index]
-            integral_N_square = self.compute_integral_N_squared(triangle_face)
+            triangle_encoding = self.FEM_encoding[face_index]
+            integral_N_square = self.compute_integral_N_squared(triangle_encoding)
             return integral_N_square * self.material_properties.density
 
         # Compute all element mass matrices
@@ -220,8 +265,8 @@ class Simulator:
 
     def compute_damping_matrix(self):
         def compute_element_damping_matrix(face_index):
-            triangle_face = self.mesh_faces[face_index]
-            integral_N_square = self.compute_integral_N_squared(triangle_face)
+            triangle_encoding = self.FEM_encoding[face_index]
+            integral_N_square = self.compute_integral_N_squared(triangle_encoding)
             return integral_N_square * self.material_properties.density
 
         # Compute all element mass matrices
@@ -369,36 +414,27 @@ class Simulator:
 
     def assemble_square_matrix(self, all_M_e):
         matrix = np.zeros([2 * self.total_number_of_nodes, 2 * self.total_number_of_nodes], dtype=np.float64)
-        for i in range(len(self.mesh_faces)):
-            triangle_face = self.mesh_faces[i]
+        assert(len(self.mesh_faces) == len(self.FEM_encoding))
+        for i in range(len(self.FEM_encoding)):
+            triangle_encoding = self.FEM_encoding[i]
 
-            node_i_idx = triangle_face[0]
-            node_j_idx = triangle_face[1]
-            node_k_idx = triangle_face[2]
+            global_indices, ijk_indices = decode_triangle_indices(triangle_encoding, self.element_order)
 
-            node_i_global_index_x = node_i_idx * 2
-            node_i_global_index_y = node_i_global_index_x + 1
-            node_j_global_index_x = node_j_idx * 2
-            node_j_global_index_y = node_j_global_index_x + 1
-            node_k_global_index_x = node_k_idx * 2
-            node_k_global_index_y = node_k_global_index_x + 1
+            global_indices_list = []
+            for j in range(len(global_indices)):
+                global_indices_list.append(global_indices[j] * 2)
+                global_indices_list.append(global_indices[j] * 2 + 1)
+            global_indices_list = np.array(global_indices_list)
 
-            # The indices of i_x, i_y, j_x, j_y, k_x, k_y
-            global_indices_list = np.array([
-                node_i_global_index_x,
-                node_i_global_index_y,
-                node_j_global_index_x,
-                node_j_global_index_y,
-                node_k_global_index_x,
-                node_k_global_index_y
-            ])
-
-            matrix[global_indices_list.reshape([6, 1]), global_indices_list] += all_M_e[i]
+            matrix[global_indices_list.reshape([2*len(global_indices), 1]), global_indices_list] += all_M_e[i]
 
         return matrix
 
     def compute_body_forces(self, include_gravity=True):
         f_b = np.zeros([2 * self.total_number_of_nodes])
+
+        # Number of nodes in the element
+        m = int((self.element_order + 1) * (self.element_order + 2) / 2)
 
         # Add gravity force to all nodes
         if include_gravity:
@@ -407,18 +443,13 @@ class Simulator:
 
                 value_x = V_e * self.material_properties.density * self.gravity[0]
                 value_y = V_e * self.material_properties.density * self.gravity[1]
-                f_g_e = np.array([
-                    value_x,
-                    value_y,
-                    value_x,
-                    value_y,
-                    value_x,
-                    value_y
-                ], dtype=np.float64)
+
+                # Compute the element gravity force
+                f_g_e = np.array([value_x, value_y] * m)
 
                 return f_g_e
 
-            all_gravity_terms = np.zeros([len(self.mesh_faces), 6], dtype=np.float64)
+            all_gravity_terms = np.zeros([len(self.mesh_faces), 2*m], dtype=np.float64)
             for i in range(len(self.mesh_faces)):
                 f_g_e = compute_element_gravity_term(i)
                 all_gravity_terms[i] = f_g_e
@@ -426,29 +457,15 @@ class Simulator:
             # Assemble the stiffness matrix
             f_g = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
             for i in range(len(self.mesh_faces)):
-                triangle_face = self.mesh_faces[i]
+                triangle_encoding = self.FEM_encoding[i]
 
-                node_i_idx = triangle_face[0]
-                node_j_idx = triangle_face[1]
-                node_k_idx = triangle_face[2]
-
-                node_i_global_index_x = node_i_idx * 2
-                node_i_global_index_y = node_i_global_index_x + 1
-                node_j_global_index_x = node_j_idx * 2
-                node_j_global_index_y = node_j_global_index_x + 1
-                node_k_global_index_x = node_k_idx * 2
-                node_k_global_index_y = node_k_global_index_x + 1
-
-                # The indices of i_x, i_y, j_x, j_y, k_x, k_y
-                global_indices_list = np.array([
-                    node_i_global_index_x,
-                    node_i_global_index_y,
-                    node_j_global_index_x,
-                    node_j_global_index_y,
-                    node_k_global_index_x,
-                    node_k_global_index_y
-                ])
-                #         print(global_indices_list)
+                global_indices, ijk_indices = decode_triangle_indices(triangle_encoding,
+                                                                      self.element_order)
+                global_indices_list = []
+                for j in range(len(global_indices)):
+                    global_indices_list.append(global_indices[j] * 2)
+                    global_indices_list.append(global_indices[j] * 2 + 1)
+                global_indices_list = np.array(global_indices_list)
 
                 f_g[global_indices_list] += all_gravity_terms[i]
 
@@ -469,31 +486,104 @@ class Simulator:
             :return: A (2n)x1 vector.
             """
 
-        # x-indices
-        traction_edge_indices_x = np.arange((self.number_of_nodes_x - 1) * 2,
-                                            2 * self.total_number_of_nodes - 1,
-                                            self.number_of_nodes_x * 2)
-        # y-indices
-        traction_edge_indices_y = traction_edge_indices_x + 1
+        num_internal_nodes = (self.element_order -1) * (self.element_order - 2) / 2
 
-        line_element_length = self.height / (len(traction_edge_indices_y) - 1)
+        def compute_element_traction(traction_encoding_index):
+            traction_encoding = self.traction_encodings[traction_encoding_index]
+            triangle_encoding = self.FEM_encoding[traction_encoding[0]]
+
+            global_indices, ijk_indices = decode_triangle_indices(triangle_encoding, self.element_order)
+            num_edge_nodes = self.element_order - 1
+
+            i,j,k = global_indices[0:3]
+
+            # If traction edge is ij-edge
+            local_edge_indices = []
+            if traction_encoding[1] == 0:
+                local_edge_indices.append(0)
+                edge_start_index = 4 + num_internal_nodes
+                local_edge_indices.extend(np.arange(edge_start_index, edge_start_index + num_edge_nodes))
+                local_edge_indices.append(1)
+            # Elif traction edge is jk-edge
+            elif traction_encoding[1] == 1:
+                local_edge_indices.append(1)
+                edge_start_index = 4 + num_internal_nodes + num_edge_nodes
+                local_edge_indices.extend(np.arange(edge_start_index, edge_start_index + num_edge_nodes))
+                local_edge_indices.append(2)
+            # Elif traction edge is ki-edge
+            elif traction_encoding[1] == 2:
+                local_edge_indices.append(2)
+                edge_start_index = 4 + num_internal_nodes + num_edge_nodes * 2
+                local_edge_indices.extend(np.arange(edge_start_index, edge_start_index + num_edge_nodes))
+                local_edge_indices.append(0)
+
+            local_edge_indices = np.array(local_edge_indices)
+
+            edge_indices = global_indices[local_edge_indices]
+            # Assumes edge is fully vertical
+            element_length = np.abs(self.FEM_V[edge_indices[0]][1] - self.FEM_V[edge_indices[-1]][1])
+
+            scheme = quadpy.c1.gauss_patterson(self.element_order + 1)
+
+            N_int_vals = np.zeros([2, len(local_edge_indices)*2])
+            for l in range(len(local_edge_indices)):
+                def f(x):
+                    # Compute barycentric coordinates
+                    xi = None
+                    if traction_encoding[1] == 0:
+                        xi_3 = x * 0
+                        xi_1 = 1 - x/element_length
+                        xi_2 = 1 - xi_1
+                        xi = np.array([xi_1, xi_2, xi_3])
+                    elif traction_encoding[1] == 1:
+                        xi_1 = x * 0
+                        xi_2 = 1 - x/element_length
+                        xi_3 = 1 - xi_2
+                        xi = np.array([xi_1, xi_2, xi_3])
+                    elif traction_encoding[1] == 2:
+                        xi_2 = x * 0
+                        xi_3 = 1 - x/element_length
+                        xi_1 = 1 - xi_3
+                        xi = np.array([xi_1, xi_2, xi_3])
+
+                    shape_function_val = silvester_shape_function(
+                        ijk_indices[local_edge_indices[l]], xi, self.element_order)
+
+                    return shape_function_val
+
+                val = scheme.integrate(f, [0.0, element_length])
+
+                N_int_vals[0, l*2] = val
+                N_int_vals[1, 1 + l*2] = val
+
+            f_t_e = N_int_vals.T@self.traction_force
+
+            f_t_e_global_indices = global_indices[local_edge_indices]
+
+            return f_t_e, f_t_e_global_indices
+
+        m = int((self.element_order + 1) * (self.element_order + 2) / 2)
+        all_traction_terms = []
+        all_traction_indices = []
+        for i in range(len(self.traction_encodings)):
+            f_t_e, f_t_e_indices = compute_element_traction(i)
+            all_traction_terms.append(f_t_e)
+            all_traction_indices.append(f_t_e_indices)
 
         f_t = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
+        for i in range(len(all_traction_terms)):
+            f_t_e = all_traction_terms[i]
+            global_indices = all_traction_indices[i]
 
-        scaled_traction = line_element_length * np.array(self.traction_force)
+            global_indices_list = []
+            for j in range(len(global_indices)):
+                global_indices_list.append(global_indices[j] * 2)
+                global_indices_list.append(global_indices[j] * 2 + 1)
+            global_indices_list = np.array(global_indices_list)
 
-        f_t[traction_edge_indices_x] = scaled_traction[0]
-        f_t[traction_edge_indices_y] = scaled_traction[1]
+            f_t[global_indices_list] += f_t_e
 
-        # Remember end nodes only have half traction values.
-        f_t[traction_edge_indices_x[0]] = scaled_traction[0] / 2
-        f_t[traction_edge_indices_x[-1]] = scaled_traction[0] / 2
-        f_t[traction_edge_indices_y[0]] = scaled_traction[1] / 2
-        f_t[traction_edge_indices_y[-1]] = scaled_traction[1] / 2
-
-        P_t = -f_t
-
-        return P_t
+        return -f_t
 
     def compute_F(self, x_i, x_j, x_k, X_i, X_j, X_k):
         x_ij = (x_j - x_i)

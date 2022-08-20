@@ -31,18 +31,19 @@ def main():
     print("----------------------------------------------------")
 
     # Setup simulation settings
-    time_to_simulate = 72 # Seconds
+    time_to_simulate = 3.6 # Seconds
     time_step = 0.001  # Seconds
     # time_step = 1 / 30
     number_of_time_steps = math.ceil(time_to_simulate / time_step)
+    element_order = 1
 
     # Cantilever settings
     length = 6.0  # Meters
     height = 2.0  # Meters
-    number_of_nodes_x = 2 # Number of nodes in x direction
-    number_of_nodes_y = 2 # Number of nodes in y direction
-    traction_force = [0, -4000.0]  # Newtons
-    gravity = [0, -3]  # m/s^2
+    number_of_nodes_x = 27 # Number of nodes in x direction
+    number_of_nodes_y = 9 # Number of nodes in y direction
+    traction_force = [0, -10000]  # Newtons
+    gravity = [0, 0]  # m/s^2
 
     # Print simulation settings
     print("----------------------------------------------------")
@@ -54,8 +55,9 @@ def main():
 
     simulator = Simulator(number_of_time_steps, time_step, material_properties,
                           length, height, number_of_nodes_x, number_of_nodes_y, traction_force,
-                          gravity)
-    sim_file_name = f'result_{length}l_{height}h_{number_of_nodes_x}xn_{number_of_nodes_y}yn_{traction_force}tf_{time_to_simulate}t_{time_step}ts_{material_name}mn_{gravity}g_{simulator.material_properties.damping_coefficient}dc'
+                          gravity, element_order)
+
+    sim_file_name = f'result_{length}l_{height}h_{number_of_nodes_x}xn_{number_of_nodes_y}yn_{traction_force}tf_{time_to_simulate}t_{time_step}ts_{element_order}order_{material_name}mn_{gravity}g_{simulator.material_properties.damping_coefficient}dc'
     try:
         f = open(sim_file_name, 'rb')
         result = pickle.load(f)
