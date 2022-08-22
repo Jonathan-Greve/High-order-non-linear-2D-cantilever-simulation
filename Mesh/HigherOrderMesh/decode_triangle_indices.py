@@ -27,13 +27,13 @@ def decode_triangle_indices(encoding, n):
 
     # ij-edge indices (if any)
     num_edge_nodes = n - 1
-    if n > 2:
+    if n >= 2:
         # Indices for ij edge
         ij_edge_indices = []
         ij_edge_ijk_indices = []
         for l in range(num_edge_nodes):
             ij_edge_indices.append(encoding[4] + l)
-            ij_edge_ijk_indices.append((n-l, l, 0))
+            ij_edge_ijk_indices.append((n-l-1, l+1, 0))
         if encoding[5] == -1:
             ij_edge_indices = reversed(ij_edge_indices)
             ij_edge_ijk_indices = reversed(ij_edge_ijk_indices)
@@ -45,7 +45,7 @@ def decode_triangle_indices(encoding, n):
         jk_edge_ijk_indices = []
         for l in range(num_edge_nodes):
             jk_edge_indices.append(encoding[6] + l)
-            jk_edge_ijk_indices.append((0, n-l, l))
+            jk_edge_ijk_indices.append((0, n-l-1, l+1))
         if encoding[7] == -1:
             jk_edge_indices = reversed(jk_edge_indices)
             jk_edge_ijk_indices = reversed(jk_edge_ijk_indices)
@@ -57,7 +57,7 @@ def decode_triangle_indices(encoding, n):
         ki_edge_ijk_indices = []
         for l in range(num_edge_nodes):
             ki_edge_indices.append(encoding[8] + l)
-            ki_edge_ijk_indices.append((0, n - l, l))
+            ki_edge_ijk_indices.append((l+1, 0, n-l-1))
         if encoding[7] == -1:
             ki_edge_indices = reversed(ki_edge_indices)
             ki_edge_ijk_indices = reversed(ki_edge_ijk_indices)

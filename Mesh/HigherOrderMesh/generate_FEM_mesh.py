@@ -51,7 +51,7 @@ def generate_FEM_mesh(V, faces, n=1):
         else:
             encoding.append(0)
 
-        if n <= 2:
+        if n < 2:
             # No edge nodes
             encoding.extend([-1, 0]*3)
         else:
@@ -86,4 +86,4 @@ def generate_FEM_mesh(V, faces, n=1):
             raise Exception("Encoding is too short")
         faces_encoding.append(encoding)
 
-    return V_new, faces_encoding
+    return V_new, np.array(faces_encoding)

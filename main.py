@@ -31,7 +31,7 @@ def main():
     print("----------------------------------------------------")
 
     # Setup simulation settings
-    time_to_simulate = 4 # Seconds
+    time_to_simulate = 3.7 # Seconds
     time_step = 0.001  # Seconds
     # time_step = 1 / 30
     number_of_time_steps = math.ceil(time_to_simulate / time_step)
@@ -40,8 +40,8 @@ def main():
     # Cantilever settings
     length = 6.0  # Meters
     height = 2.0  # Meters
-    number_of_nodes_x = 20 # Number of nodes in x direction
-    number_of_nodes_y = 2 # Number of nodes in y direction
+    number_of_nodes_x = 9 # Number of nodes in x direction
+    number_of_nodes_y = 5 # Number of nodes in y direction
     traction_force = [0, 0]  # Newtons
     gravity = [0, -3]  # m/s^2
 
@@ -70,20 +70,20 @@ def main():
         f.close()
 
     # Plot the final simulation result
-    plot_sim_result_1(simulator.mesh_points, simulator.mesh_faces, result.nodal_displacements[-1],
+    plot_sim_result_1(simulator.FEM_V, simulator.FEM_encoding, result.nodal_displacements[-1],
                       simulator.number_of_nodes_x, simulator.number_of_nodes_y, simulator.traction_force,
-                      result.time_steps[-1])
+                      result.time_steps[-1], simulator.element_order)
 
     # Plot the various energies as a function of time
-    plot_sim_result_energies_1(simulator.mesh_points, simulator.mesh_faces,
-                               simulator.material_properties.density, result,
-                               simulator.gravity, simulator.all_A_e, simulator.lambda_, simulator.mu)
+    # plot_sim_result_energies_1(simulator.FEM_V, simulator.FEM_encoding,
+    #                            simulator.material_properties.density, result,
+    #                            simulator.gravity, simulator.all_A_e, simulator.lambda_, simulator.mu, simulator.element_order)
 
     # make a gif of the simulation
-    make_sim_result_gif_1(simulator.mesh_points, simulator.mesh_faces,
+    make_sim_result_gif_1(simulator.FEM_V, simulator.FEM_encoding,
                           result, simulator.number_of_nodes_x, simulator.number_of_nodes_y,
                           simulator.traction_force, result.time_steps[-1], simulator.time_step,
-                          sim_file_name)
+                          sim_file_name, simulator.element_order)
 
 if __name__ == '__main__':
     try:

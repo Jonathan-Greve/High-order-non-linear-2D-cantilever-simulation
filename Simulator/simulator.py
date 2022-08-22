@@ -10,7 +10,9 @@ from Mesh.Cantilever.generate_2d_cantilever_delaunay import generate_2d_cantilev
 from Mesh.Cantilever.generate_2d_cantilever_kennys import generate_2d_cantilever_kennys
 from Mesh.HigherOrderMesh.decode_triangle_indices import decode_triangle_indices
 from Mesh.HigherOrderMesh.generate_FEM_mesh import generate_FEM_mesh
-from Simulator.HigherOrderElements.shape_functions import silvester_shape_function
+from Simulator.HigherOrderElements.shape_functions import silvester_shape_function, \
+    shape_function_spatial_derivative, shape_function_barycentric_derivative_vectorized, \
+    shape_function_spatial_derivative_vectorized
 from Simulator.cartesian_to_barycentric import cartesian_to_barycentric
 from Simulator.integral_computations import compute_shape_function_volume
 from Simulator.result import Result
@@ -136,8 +138,8 @@ class Simulator:
         u_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
         v_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
         a_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
-        a_n[np.arange(1, self.total_number_of_nodes * 2, 2)] = self.gravity[1]
-        x_n = self.mesh_points.reshape([self.total_number_of_nodes * 2])
+        # a_n[np.arange(1, self.total_number_of_nodes * 2, 2)] = self.gravity[1]
+        x_n = self.FEM_V.reshape([self.total_number_of_nodes * 2])
 
         times = [0]
         displacements = [u_n]
@@ -151,7 +153,7 @@ class Simulator:
         for i in tqdm(range(self.number_of_time_steps), desc="Running simulation"):
             time_step_size = np.min([self.time_step, self.number_of_time_steps*self.time_step - time])
             # Compute stiffness matrix
-            k, E = self.compute_stiffness_matrix(u_n)
+            k, E = self.compute_stiffness_matrix(x_n)
 
             # Do simulation step
             damping_term = np.dot(C, v_n)
@@ -181,7 +183,7 @@ class Simulator:
             x_n_1 = x_n + self.time_step * v_n_1
 
             # New displacements
-            u_n = x_n_1 - self.mesh_points.reshape([self.total_number_of_nodes * 2])
+            u_n = x_n_1 - self.FEM_V.reshape([self.total_number_of_nodes * 2])
 
             # New velocities
             v_n = v_n_1
@@ -204,7 +206,7 @@ class Simulator:
             # Print time
             # print(f"i: {i}. Time: {time}")
 
-        return Result(times, displacements, velocities, accelerations, Es, Ms, damping_forces, f_g)
+        return Result(times, np.array(displacements), velocities, accelerations, Es, Ms, damping_forces, f_g)
 
     def compute_integral_N_squared(self, triangle_encoding):
         # Compute matrix using quadpy (quadpy is a quadrature package)
@@ -278,60 +280,50 @@ class Simulator:
 
         return C * self.material_properties.damping_coefficient
 
-    def compute_stiffness_matrix(self, u_n):
-        def compute_element_stiffness_matrix(triangle_face, A_e):
-            node_i_idx = triangle_face[0]
-            node_j_idx = triangle_face[1]
-            node_k_idx = triangle_face[2]
-            
-            node_i_global_index_x = node_i_idx * 2
-            node_i_global_index_y = node_i_global_index_x + 1
-            node_j_global_index_x = node_j_idx * 2
-            node_j_global_index_y = node_j_global_index_x + 1
-            node_k_global_index_x = node_k_idx * 2
-            node_k_global_index_y = node_k_global_index_x + 1
+    def compute_stiffness_matrix(self, x_n):
+        m = int((self.element_order + 1) * (self.element_order + 2) / 2)
+        def compute_element_stiffness_matrix(face_index):
+            triangle_encoding = self.FEM_encoding[face_index]
+            global_indices, ijk_indices = decode_triangle_indices(triangle_encoding, self.element_order)
+            triangle = self.FEM_V[global_indices[0:3]]
 
-            # Material coordinates
-            X_i, Y_i = self.mesh_points[node_i_idx]
-            X_j, Y_j = self.mesh_points[node_j_idx]
-            X_k, Y_k = self.mesh_points[node_k_idx]
+            # Reference vertices (non-deformed vertices)
+            V_e = self.FEM_V[global_indices]
+            v_e = []
+            for i in range(m):
+                x = x_n[global_indices[i]*2]
+                y = x_n[global_indices[i]*2+1]
+                v_e.append(np.array([x,y]))
 
 
-            # Spatial coordinates
-            x_i, y_i = (X_i + u_n[node_i_global_index_x]), (Y_i + u_n[node_i_global_index_y])
-            x_j, y_j = (X_j + u_n[node_j_global_index_x]), (Y_j + u_n[node_j_global_index_y])
-            x_k, y_k = (X_k + u_n[node_k_global_index_x]), (Y_k + u_n[node_k_global_index_y])
 
-            # Triangle material vectors
-            dY_kj = Y_k - Y_j
-            dY_ik = Y_i - Y_k
-            dY_ji = Y_j - Y_i
-            dX_kj = X_k - X_j
-            dX_ik = X_i - X_k
-            dX_ji = X_j - X_i
+            # Compute F for each shape function (i.e. for each node of the element)
+            F = np.zeros((2,2))
+            for i in range(m):
+                dN = shape_function_spatial_derivative(V_e, triangle_encoding, V_e[i],
+                                                       self.element_order)
 
-            # Triangle shape function derivatives
-            dN_iX = dY_kj / (2 * A_e)
-            dN_jX = dY_ik / (2 * A_e)
-            dN_kX = dY_ji / (2 * A_e)
-            dN_iY = -dX_kj / (2 * A_e)
-            dN_jY = -dX_ik / (2 * A_e)
-            dN_kY = -dX_ji / (2 * A_e)
+                # x_i = v_e[i][0]
+                # y_i = v_e[i][1]
+                #
+                # F_i = np.array([
+                #     [dN[i,0] * x_i, dN[i,1] * x_i],
+                #     [dN[i,0] * y_i, dN[i,1] * y_i]
+                # ])
+                F+= np.outer(dN[i],v_e[i])
 
-            # Compute F
-            F_i = np.array([
-                [dN_iX * x_i, dN_iY * x_i],
-                [dN_iX * y_i, dN_iY * y_i]
-            ], dtype=np.float64)
-            F_j = np.array([
-                [dN_jX * x_j, dN_jY * x_j],
-                [dN_jX * y_j, dN_jY * y_j]
-            ], dtype=np.float64)
-            F_k = np.array([
-                [dN_kX * x_k, dN_kY * x_k],
-                [dN_kX * y_k, dN_kY * y_k]
-            ], dtype=np.float64)
-            F = F_i + F_j + F_k
+                # F += F_i
+
+            i = global_indices[0]
+            j = global_indices[1]
+            k = global_indices[2]
+
+            x_i = np.array([x_n[i*2], x_n[i*2+1]])
+            x_j = np.array([x_n[j*2], x_n[j*2+1]])
+            x_k = np.array([x_n[k*2], x_n[k*2+1]])
+
+            F = self.compute_F(x_i, x_j, x_k, triangle[0], triangle[1], triangle[2])
+
             # print(f'Triangle {triangle_face}')
             # F = self.compute_F(
             #     np.array([x_i, y_i]),
@@ -350,34 +342,47 @@ class Simulator:
             # Compute S
             S = self.lambda_ * np.trace(E) * I + 2 * self.mu * E
 
-            # Compute vector field gradients
-            grad_i = np.array([dN_iX, dN_iY])
-            grad_j = np.array([dN_jX, dN_jY])
-            grad_k = np.array([dN_kX, dN_kY])
+            scheme = quadpy.t2.get_good_scheme(self.element_order)
+            quad_points = scheme.points
+            quad_weights = scheme.weights
 
+            A_e = self.all_A_e[face_index]
 
-            res_i = A_e * np.dot(np.dot(F, S), grad_i)
-            res_j = A_e * np.dot(np.dot(F, S), grad_j)
-            res_k = A_e * np.dot(np.dot(F, S), grad_k)
-            k_e = np.array([
-                res_i[0],
-                res_i[1],
-                res_j[0],
-                res_j[1],
-                res_k[0],
-                res_k[1]
-            ], dtype=np.float64)
+            k_e = np.zeros(2*m)
+            for i in range(m):
+                def f(x):
+                    dN = shape_function_spatial_derivative(V_e, triangle_encoding, x,
+                                                       self.element_order)
+                    P = F @ S
+                    result = (P @ dN[i])
+
+                    return result
+
+                val = 0
+                for j in range(len(quad_points[0])):
+                    point_bary = quad_points[:,j]
+                    point = triangle[0] * point_bary[0] + \
+                            triangle[1] * point_bary[1] + \
+                            triangle[2] * point_bary[2]
+                    val += f(point) * quad_weights[j]
+                val *= A_e
+
+                # val_x = scheme.integrate(f_x, triangle)
+                # val_y = scheme.integrate(f_y, triangle)
+
+                k_e[2*i] = val[0]
+                k_e[2*i+1] = val[1]
 
             return k_e, E, F
 
         # Computes all element stiffness matrices
-        all_k_e_matrices = np.zeros([len(self.mesh_faces), 6], dtype=np.float64)
+        all_k_e_matrices = np.zeros([len(self.mesh_faces), 2*m], dtype=np.float64)
         all_Es = np.zeros([len(self.mesh_faces), 2, 2])
         all_Fs = np.zeros([len(self.mesh_faces), 2, 2])
         for i in range(len(self.mesh_faces)):
             triangle_face = self.mesh_faces[i]
             A_e = self.all_A_e[i]
-            k_e, E, F = compute_element_stiffness_matrix(triangle_face, A_e)
+            k_e, E, F = compute_element_stiffness_matrix(i)
             all_k_e_matrices[i] = k_e
             all_Es[i] = E
             all_Fs[i] = F
@@ -385,22 +390,15 @@ class Simulator:
         # Assemble the stiffness matrix
         k = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
         for i in range(len(self.mesh_faces)):
-            triangle_face = self.mesh_faces[i]
+            triangle_encoding = self.FEM_encoding[i]
 
-            node_i_idx = triangle_face[0]
-            node_j_idx = triangle_face[1]
-            node_k_idx = triangle_face[2]
-
-            # The indices of i_x, i_y, j_x, j_y, k_x, k_y
-            global_indices_list = np.array([
-                node_i_idx * 2,
-                node_i_idx * 2 + 1,
-                node_j_idx * 2,
-                node_j_idx * 2 + 1,
-                node_k_idx * 2,
-                node_k_idx * 2 + 1
-            ])
-            #         print(global_indices_list)
+            global_indices, ijk_indices = decode_triangle_indices(triangle_encoding,
+                                                                  self.element_order)
+            global_indices_list = []
+            for j in range(len(global_indices)):
+                global_indices_list.append(global_indices[j] * 2)
+                global_indices_list.append(global_indices[j] * 2 + 1)
+            global_indices_list = np.array(global_indices_list)
 
             k[global_indices_list] += all_k_e_matrices[i]
 
@@ -530,7 +528,7 @@ class Simulator:
                 local_edge_indices.extend(np.arange(edge_start_index, edge_start_index + num_edge_nodes))
                 local_edge_indices.append(0)
 
-            local_edge_indices = np.array(local_edge_indices)
+            local_edge_indices = np.array(local_edge_indices, dtype=np.int32)
 
             edge_indices = global_indices[local_edge_indices]
             # Assumes edge is fully vertical

@@ -7,16 +7,25 @@ from EnergyComputations.compute_kinetic_energy import compute_kinetic_energy, \
 from EnergyComputations.compute_lost_damping_energy import compute_lost_damping_energy
 from EnergyComputations.compute_potential_energy import compute_potential_energy
 from EnergyComputations.compute_strain_energy import compute_strain_energy
+from Mesh.HigherOrderMesh.decode_triangle_indices import decode_triangle_indices
 from Simulator.result import Result
 
 
-def plot_sim_result_energies_1(vertices, faces, density, result: Result, gravity, areas, lambda_, mu):
+def plot_sim_result_energies_1(FEM_V, FEM_encodings, density, result: Result, gravity, areas, lambda_, mu, element_order):
     velocities = result.nodal_velocities
     displacements = result.nodal_displacements
 
     print("----------------------------------------------------")
     print("Started generating energy plot")
     print("----------------------------------------------------")
+
+    vertices = []
+    faces = []
+    for i, encoding in enumerate(FEM_encodings):
+        global_indices, _ = decode_triangle_indices(encoding, element_order)
+        vertices.append(FEM_V[global_indices[0:3]])
+        faces.append(global_indices[0:3])
+
 
     # kinetic_energies = np.array([compute_kinetic_energy(density, velocities[i], faces, areas) for i in tqdm(range(len(velocities)), desc="Computing kinetic energies")])
     kinetic_energies_Mv = np.array([compute_kinetic_energy_from_M_and_v(result.Ms[i], velocities[i]) for i in tqdm(range(len(velocities)), desc="Computing kinetic energies Mv")])
