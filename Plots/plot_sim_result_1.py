@@ -17,10 +17,11 @@ def plot_sim_result_1(FEM_V, FEM_encodings, u, num_nodes_x, num_nodes_y, tractio
 
     sample_points = generate_ijk_indices(20) / 20
 
-    deformed_V = FEM_V + u.reshape((n, 2))
+    deformed_V = FEM_V + u.reshape((len(FEM_V), 2))
 
-    interpolated_points = []
     for i, encoding in enumerate(FEM_encodings):
+        reference_points = []
+        interpolated_points = []
         global_indices, ijk_indices = decode_triangle_indices(encoding, element_order)
         for sample_point in sample_points:
             N_vals = []
@@ -29,9 +30,13 @@ def plot_sim_result_1(FEM_V, FEM_encodings, u, num_nodes_x, num_nodes_y, tractio
                 N_vals.append(N_val)
             N_vals = np.array(N_vals)
 
-            interpolated_point = N_vals@ deformed_V[global_indices]
+            interpolated_point = N_vals @ deformed_V[global_indices]
             interpolated_points.append(interpolated_point)
-    interpolated_points = np.array(interpolated_points)
+            interpolated_reference_point = N_vals @ FEM_V[global_indices]
+            reference_points.append(interpolated_reference_point)
+        interpolated_points = np.array(interpolated_points)
+        reference_points = np.array(reference_points)
+        plt.scatter(reference_points[:, 0], reference_points[:, 1])
+        plt.scatter(interpolated_points[:, 0], interpolated_points[:, 1])
 
-    plt.scatter(interpolated_points[:, 0], interpolated_points[:, 1])
     plt.show()

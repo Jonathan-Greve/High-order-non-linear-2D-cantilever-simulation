@@ -17,10 +17,10 @@ def make_sim_result_gif_1(FEM_V, FEM_encodings, result, num_nodes_x, num_nodes_y
 
     images = []
 
-    num_time_steps_per_frame = 30
-    time_rate = 1
+    num_time_steps_per_frame = 10
+    time_rate = 5
 
-    sample_points = generate_ijk_indices(40) / 40
+    sample_points = generate_ijk_indices(20) / 20
 
     for i in tqdm(range(0, len(result.nodal_displacements), num_time_steps_per_frame), desc='Creating GIF'):
         # make a Figure and attach it to a canvas.
@@ -30,11 +30,11 @@ def make_sim_result_gif_1(FEM_V, FEM_encodings, result, num_nodes_x, num_nodes_y
         # Do some plotting here
         ax = fig.add_subplot(111)
 
-        deformed_V = FEM_V + result.nodal_displacements[i].reshape((n, 2))
+        deformed_V = FEM_V + result.nodal_displacements[i].reshape((len(FEM_V), 2))
 
-        reference_points = []
-        interpolated_points = []
         for i, encoding in enumerate(FEM_encodings):
+            reference_points = []
+            interpolated_points = []
             global_indices, ijk_indices = decode_triangle_indices(encoding, element_order)
             for sample_point in sample_points:
                 N_vals = []
@@ -47,12 +47,14 @@ def make_sim_result_gif_1(FEM_V, FEM_encodings, result, num_nodes_x, num_nodes_y
                 interpolated_points.append(interpolated_point)
                 interpolated_reference_point = N_vals @ FEM_V[global_indices]
                 reference_points.append(interpolated_reference_point)
+            interpolated_points = np.array(interpolated_points)
+            reference_points = np.array(reference_points)
+            ax.scatter(reference_points[:, 0], reference_points[:, 1])
+            ax.scatter(interpolated_points[:, 0], interpolated_points[:, 1])
 
-        interpolated_points = np.array(interpolated_points)
-        reference_points = np.array(reference_points)
+        # interpolated_points = np.array(interpolated_points)
+        # reference_points = np.array(reference_points)
 
-        reference = ax.scatter(reference_points[:, 0], reference_points[:, 1])
-        deformed = ax.scatter(interpolated_points[:, 0], interpolated_points[:, 1])
 
         # ax.legend(handles=[reference, deformed], loc='upper left')
         ax.set_xlabel(r'$X_1$')
