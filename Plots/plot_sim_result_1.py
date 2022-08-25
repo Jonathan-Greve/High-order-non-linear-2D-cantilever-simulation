@@ -36,7 +36,7 @@ def plot_sim_result_1(FEM_V, FEM_encodings, u, num_nodes_x, num_nodes_y, tractio
             reference_points.append(interpolated_reference_point)
         interpolated_points = np.array(interpolated_points)
         reference_points = np.array(reference_points)
-        plt.scatter(reference_points[:, 0], reference_points[:, 1])
-        plt.scatter(interpolated_points[:, 0], interpolated_points[:, 1])
+        plt.scatter(reference_points[:, 0], reference_points[:, 1], zorder=0)
+        plt.scatter(interpolated_points[:, 0], interpolated_points[:, 1], zorder=10)
 
     plt.show()

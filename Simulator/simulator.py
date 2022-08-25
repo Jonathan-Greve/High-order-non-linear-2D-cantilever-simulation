@@ -5,6 +5,8 @@ import quadpy
 from scipy.spatial import Delaunay
 from tqdm import tqdm
 
+import pandas as pd
+
 from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas
 from Mesh.Cantilever.generate_2d_cantilever_delaunay import generate_2d_cantilever_delaunay
@@ -12,7 +14,8 @@ from Mesh.Cantilever.generate_2d_cantilever_kennys import generate_2d_cantilever
 from Mesh.HigherOrderMesh.decode_triangle_indices import decode_triangle_indices
 from Mesh.HigherOrderMesh.generate_FEM_mesh import generate_FEM_mesh
 from Simulator.HigherOrderElements.shape_functions import silvester_shape_function, \
-    shape_function_spatial_derivative, vandermonde_shape_function, vandermonde_spatial_derivative
+    shape_function_spatial_derivative, vandermonde_shape_function, vandermonde_spatial_derivative, \
+    vandermonde_shape_function_1D
 from Simulator.cartesian_to_barycentric import cartesian_to_barycentric
 from Simulator.integral_computations import compute_shape_function_volume
 from Simulator.result import Result
@@ -57,10 +60,10 @@ class Simulator:
         self.element_order = element_order
 
         # Initialize the cantilever mesh
-        points, faces = generate_2d_cantilever_delaunay(self.length, self.height,
-                                                     self.number_of_nodes_x, self.number_of_nodes_y)
-        # points, faces = generate_2d_cantilever_kennys(self.length, self.height,
-        #                                                 self.number_of_nodes_x, self.number_of_nodes_y)
+        # points, faces = generate_2d_cantilever_delaunay(self.length, self.height,
+        #                                              self.number_of_nodes_x, self.number_of_nodes_y)
+        points, faces = generate_2d_cantilever_kennys(self.length, self.height,
+                                                        self.number_of_nodes_x, self.number_of_nodes_y)
         self.mesh_points = points.astype(np.float64)
         self.mesh_faces = faces
         self.all_A_e = compute_all_element_areas(self.mesh_points, self.mesh_faces)
@@ -125,6 +128,7 @@ class Simulator:
 
         # Precompute some variables
         M = self.compute_mass_matrix()
+        # M[M < 0] = 0
         Minv = np.linalg.inv(M)
         C = self.compute_damping_matrix()
         f_t = self.compute_traction_forces()
@@ -235,16 +239,25 @@ class Simulator:
                     continue
                 if i == j:
                     def f(x):
-                        xi = cartesian_to_barycentric(x, triangle)
-                        shape_function = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
-                        return shape_function ** 2
+                        # xi = cartesian_to_barycentric(x, triangle)
+                        # shape_function = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
+                        shape_function1 = vandermonde_shape_function(self.FEM_V[global_indices], x, self.element_order)[:,int(i / 2)]
+                        # assert(np.allclose(shape_function, shape_function1))
+
+                        return shape_function1 ** 2
                 else:
                     def f(x):
-                        xi = cartesian_to_barycentric(x, triangle)
-                        shape_function_1 = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
-                        shape_function_2 = silvester_shape_function(ijk_indices[int(j / 2)], xi, self.element_order)
+                        # xi = cartesian_to_barycentric(x, triangle)
+                        # shape_function_1 = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
+                        # shape_function_2 = silvester_shape_function(ijk_indices[int(j / 2)], xi, self.element_order)
 
-                        return shape_function_1 * shape_function_2
+                        shape_function_v1 = vandermonde_shape_function(self.FEM_V[global_indices], x, self.element_order)[:,int(i / 2)].T
+                        shape_function_v2 = vandermonde_shape_function(self.FEM_V[global_indices], x, self.element_order)[:,int(j / 2)].T
+
+                        # assert(np.allclose(shape_function_1, shape_function_v1))
+                        # assert(np.allclose(shape_function_2, shape_function_v2))
+
+                        return shape_function_v1 * shape_function_v2
 
                 integral_N_square[i,j] = scheme.integrate(f, triangle)
 
@@ -294,56 +307,33 @@ class Simulator:
                 x = x_n[global_indices[i]*2]
                 y = x_n[global_indices[i]*2+1]
                 v_e.append(np.array([x,y]))
+            v_e = np.array(v_e)
 
-            u_e = v_e - V_e
+            # u_e = v_e - V_e
 
-            # Compute F for each shape function (i.e. for each node of the element)
-            F = np.eye(2)
-            for i in range(m):
-                # dN = shape_function_spatial_derivative(V_e, triangle_encoding, V_e[i],
-                #                                        self.element_order)
-                dN_vandermonde = vandermonde_spatial_derivative(V_e, V_e[i], self.element_order).T
-
-                # x_i = v_e[i][0]
-                # y_i = v_e[i][1]
-                #
-                # F_i = np.array([
-                #     [dN[i,0] * x_i, dN[i,1] * x_i],
-                #     [dN[i,0] * y_i, dN[i,1] * y_i]
-                # ])
-                F+= np.outer(dN_vandermonde[i],u_e[i])
-
-
-            i = global_indices[0]
-            j = global_indices[1]
-            k = global_indices[2]
-
-            x_i = np.array([x_n[i*2], x_n[i*2+1]])
-            x_j = np.array([x_n[j*2], x_n[j*2+1]])
-            x_k = np.array([x_n[k*2], x_n[k*2+1]])
-
-            # F = self.compute_F(x_i, x_j, x_k, triangle[0], triangle[1], triangle[2])
-
-            # print(f'Triangle {triangle_face}')
-            # F = self.compute_F(
-            #     np.array([x_i, y_i]),
-            #     np.array([x_j, y_j]),
-            #     np.array([x_k, y_k]),
-            #     np.array([X_i, Y_i]),
-            #     np.array([X_j, Y_j]),
-            #     np.array([X_k, Y_k]),
-            # )
-
-            # Compute E
             I = np.eye(2, dtype=np.float64)
-            C = np.dot(np.transpose(F), F)
-            E = (C - I) / 2.0
+            # C = np.dot(np.transpose(F), F)
+            # E = (C - I) / 2.0
+            #
+            # # Compute S
+            # S_v = self.lambda_ * np.trace(E) * I + 2 * self.mu * E # Saint Venant–Kirchhoff model
+            #
+            # # Compressible neo-hookean model (page 163 [Bonet and Wood,2008], Eq. 6.28)
+            # J = np.linalg.det(F)
+            # S_comp_neo = self.mu * (np.eye(2) - np.linalg.inv(C)) + self.lambda_ * np.log(J) * np.linalg.inv(C)
+            #
+            # # Incompressible neo-hookean model (page 169 [Bonet and Wood,2008], Eq. 6.52)
+            # I_C = np.trace(C)
+            # III_C = np.linalg.det(C)
+            # III_C2 = J ** 2
+            # k = 10**3
+            # p = k * (J - 1)
+            # S_incomp_neo = self.mu * III_C ** (-1/3) * (np.eye(2) - (1/3) * I_C * np.linalg.inv(C)) * p * J * np.linalg.inv(C)
+            #
+            # S = S_v
 
-            # Compute S
-            try:
-                S = self.lambda_ * np.trace(E) * I + 2 * self.mu * E
-            except:
-                print('1')
+
+
 
             scheme = quadpy.t2.get_good_scheme(self.element_order)
             quad_points = scheme.points
@@ -352,10 +342,32 @@ class Simulator:
             A_e = self.all_A_e[face_index]
 
             k_e = np.zeros(2*m)
+            E = np.zeros((2,2))
+            F = np.zeros((2,2))
             for i in range(m):
                 def f(x):
-                    dN = shape_function_spatial_derivative(V_e, triangle_encoding, x,
-                                                       self.element_order)
+                    dN = vandermonde_spatial_derivative(V_e, x, self.element_order).T
+
+                    F = np.zeros((2,2))
+                    for j in range(m):
+                        F_j = np.array([
+                            [dN[j,0]*v_e[j,0], dN[j,1]*v_e[j,0]],
+                            [dN[j,0]*v_e[j,1], dN[j,1]*v_e[j,1]]
+                        ])
+                        F += F_j
+
+                    C = np.dot(np.transpose(F), F)
+                    E = (C - I) / 2.0
+                    S = self.lambda_ * np.trace(E) * I + 2 * self.mu * E
+
+                    # J = np.linalg.det(F)
+                    # S = self.mu * (np.eye(2) - np.linalg.inv(C)) + self.lambda_ * np.log(
+                    #     J) * np.linalg.inv(C)
+
+                    # dN = shape_function_spatial_derivative(V_e, triangle_encoding, x,
+                    #                                    self.element_order)
+                    # dN1 = vandermonde_spatial_derivative(V_e, x, self.element_order).T
+                    # assert (np.allclose(dN, dN1))
                     P = F @ S
                     result = (P @ dN[i])
 
@@ -385,8 +397,6 @@ class Simulator:
         all_Es = np.zeros([len(self.mesh_faces), 2, 2])
         all_Fs = np.zeros([len(self.mesh_faces), 2, 2])
         for i in range(len(self.mesh_faces)):
-            triangle_face = self.mesh_faces[i]
-            A_e = self.all_A_e[i]
             k_e, E, F = compute_element_stiffness_matrix(i)
             all_k_e_matrices[i] = k_e
             all_Es[i] = E
@@ -394,7 +404,7 @@ class Simulator:
 
         # Assemble the stiffness matrix
         k = np.zeros([2 * self.total_number_of_nodes], dtype=np.float64)
-        for i in range(len(self.mesh_faces)):
+        for i in range(len(all_k_e_matrices)):
             triangle_encoding = self.FEM_encoding[i]
 
             global_indices, ijk_indices = decode_triangle_indices(triangle_encoding,
@@ -413,6 +423,9 @@ class Simulator:
         # print("F: {}".format(all_Fs[1]))
         # print("CE: {}".format(all_Es[1]))
         # print('-------------------------------------')
+        # if not np.isclose(np.sum(k), 0, atol=1e-5):
+        #     print('here')
+        # assert(np.isclose(np.sum(k), 0, atol=1e-5))
         return k, all_Es
 
     def assemble_square_matrix(self, all_M_e):
@@ -452,10 +465,10 @@ class Simulator:
                 N_int_values = np.zeros([2, 2*m])
                 for i in range(len(global_indices)):
                     def f(x):
-                        xi = cartesian_to_barycentric(x, triangle)
-                        shape_function_val = silvester_shape_function(ijk_indices[i], xi,
-                                                                  self.element_order)
-                        # shape_function_val_vander = vandermonde_shape_function(self.FEM_V[global_indices], x, self.element_order)[:,i]
+                        # xi = cartesian_to_barycentric(x, triangle)
+                        # shape_function_val = silvester_shape_function(ijk_indices[i], xi,
+                        #                                           self.element_order)
+                        shape_function_val = vandermonde_shape_function(self.FEM_V[global_indices], x, self.element_order)[:,i]
                         return shape_function_val
 
                     int_val = scheme.integrate(f, triangle)
@@ -540,7 +553,12 @@ class Simulator:
             # Assumes edge is fully vertical
             element_length = np.abs(self.FEM_V[edge_indices[0]][1] - self.FEM_V[edge_indices[-1]][1])
 
-            scheme = quadpy.c1.gauss_patterson(self.element_order + 1)
+
+            sub_element_length = element_length / self.element_order
+            edge_points = []
+            for i in range(self.element_order + 1):
+                edge_points.append(0 + sub_element_length * i)
+            edge_points = np.array(edge_points)
 
             N_int_vals = np.zeros([2, len(local_edge_indices)*2])
             for l in range(len(local_edge_indices)):
@@ -563,11 +581,15 @@ class Simulator:
                         xi_1 = 1 - xi_3
                         xi = np.array([xi_1, xi_2, xi_3])
 
-                    shape_function_val = silvester_shape_function(
-                        ijk_indices[local_edge_indices[l]], xi, self.element_order)
+                    # shape_function_val = silvester_shape_function(
+                    #     ijk_indices[local_edge_indices[l]], xi, self.element_order)
 
-                    return shape_function_val
+                    shape_function_val1 = vandermonde_shape_function_1D(edge_points, x, self.element_order)[l]
+                    # assert(np.allclose(shape_function_val, shape_function_val1))
 
+                    return shape_function_val1
+
+                scheme = quadpy.c1.gauss_legendre(self.element_order + 1)
                 val = scheme.integrate(f, [0.0, element_length])
 
                 N_int_vals[0, l*2] = val
@@ -601,24 +623,3 @@ class Simulator:
             f_t[global_indices_list] += f_t_e
 
         return -f_t
-
-    def compute_F(self, x_i, x_j, x_k, X_i, X_j, X_k):
-        x_ij = (x_j - x_i)
-        x_ik = (x_k - x_i)
-
-        X_ij = (X_j - X_i)
-        X_ik = (X_k - X_i)
-
-        D = np.array([
-            [x_ij[0], x_ik[0]],
-            [x_ij[1], x_ik[1]],
-        ], dtype=np.float64)
-
-        D_0 = np.array([
-            [X_ij[0], X_ik[0]],
-            [X_ij[1], X_ik[1]],
-        ], dtype=np.float64)
-
-        F = D @ np.linalg.inv(D_0)
-        return F
-

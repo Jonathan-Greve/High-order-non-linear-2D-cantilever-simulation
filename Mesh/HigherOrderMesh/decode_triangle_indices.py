@@ -28,7 +28,7 @@ def decode_triangle_indices(encoding, n):
     num_internal_nodes = int((n - 2) * (n-1) / 2)
     for l in range(num_internal_nodes):
         global_indices.append(encoding[3]+l)
-        ijk_indices.extend(get_ijk_indices_for_internal_nodes(generate_ijk_indices(n)))
+    ijk_indices.extend(get_ijk_indices_for_internal_nodes(generate_ijk_indices(n)))
 
     # ij-edge indices (if any)
     num_edge_nodes = n - 1

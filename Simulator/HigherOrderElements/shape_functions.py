@@ -177,7 +177,7 @@ def vandermonde_matrix(V_e, n):
 
     V = np.zeros((len(x), num_cols))
 
-    for i in range(num_cols):
+    for i in range(len(x)):
             V[i,:] = binomial_theorem(x[i], y[i], n)
 
     return V
@@ -194,12 +194,14 @@ def vandermonde_shape_function(V_e, x, n):
     V = vandermonde_matrix(V_e, n)
     p = binomial_theorem(x[0], x[1], n)
 
-    results = []
-    for i in range(len(x[0])):
-        p_i = p[:,i]
-        results.append(p_i@np.linalg.inv(V))
-
-    return np.array(results)
+    if not np.isscalar(x[0]):
+        results = []
+        for i in range(len(x[0])):
+            p_i = p[:,i]
+            results.append(p_i@np.linalg.inv(V))
+        return np.array(results)
+    else:
+        return p@np.linalg.inv(V)
 
 def vandermonde_spatial_derivative(V_e, x, n):
     """
@@ -213,12 +215,48 @@ def vandermonde_spatial_derivative(V_e, x, n):
     V = vandermonde_matrix(V_e, n)
     dp = derivative_binomial_theorem(x[0], x[1], n)
 
-    results = []
     if not np.isscalar(x[0]):
+        results = []
         for i in range(len(x[0])):
             dp_i = dp[:,i]
             results.append(dp_i@np.linalg.inv(V))
+        return np.array(results)
     else:
         return dp@np.linalg.inv(V)
 
-    return np.array(results)
+
+def vandermonde_matrix_1D(x, n):
+    num_cols = n + 1
+
+    V = np.zeros((len(x), num_cols))
+
+    for i in range(num_cols):
+        for j in range(len(x)):
+            V[i,j] = x[i]**j
+
+    return V
+
+
+def vandermonde_shape_function_1D(edge_points, x, n):
+    """
+    Returns the value of the vandermonde shape function at x.
+    :param edge_points:
+    :param x:
+    :param n:
+    :return shape_function_val:
+    """
+
+    V = vandermonde_matrix_1D(edge_points, n)
+    p = np.zeros((len(x), n+1))
+    for i in range(len(x)):
+        for j in range(n+1):
+            p[i,j] = x[i]**j
+
+    if not np.isscalar(x):
+        results = []
+        for i in range(len(x)):
+            p_i = p[i,:]
+            results.append(p_i@np.linalg.inv(V))
+        return np.array(results).T
+    else:
+        return p@np.linalg.inv(V)

@@ -75,6 +75,11 @@ class MaterialPropertiesQuery:
             poisson_ratio=0.3,
             density=1000,
             damping_coefficient=0.0000)
+        self.material_properties["Test 2"] = MaterialProperties(
+            youngs_modulus=10.0e3,
+            poisson_ratio=0.3,
+            density=100,
+            damping_coefficient=0.0000)
 
     def get_material_properties(self, material_name):
         if material_name in self.material_properties:

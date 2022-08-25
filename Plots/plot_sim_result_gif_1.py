@@ -17,8 +17,8 @@ def make_sim_result_gif_1(FEM_V, FEM_encodings, result, num_nodes_x, num_nodes_y
 
     images = []
 
-    num_time_steps_per_frame = 10
-    time_rate = 5
+    num_time_steps_per_frame = int(30 * (0.001 / time_step_size))
+    time_rate = 1
 
     sample_points = generate_ijk_indices(20) / 20
 
@@ -49,8 +49,8 @@ def make_sim_result_gif_1(FEM_V, FEM_encodings, result, num_nodes_x, num_nodes_y
                 reference_points.append(interpolated_reference_point)
             interpolated_points = np.array(interpolated_points)
             reference_points = np.array(reference_points)
-            ax.scatter(reference_points[:, 0], reference_points[:, 1])
-            ax.scatter(interpolated_points[:, 0], interpolated_points[:, 1])
+            ax.scatter(reference_points[:, 0], reference_points[:, 1],zorder=0)
+            ax.scatter(interpolated_points[:, 0], interpolated_points[:, 1], zorder=10)
 
         # interpolated_points = np.array(interpolated_points)
         # reference_points = np.array(reference_points)
