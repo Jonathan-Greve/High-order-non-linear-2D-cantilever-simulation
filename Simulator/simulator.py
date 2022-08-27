@@ -5,7 +5,7 @@ import quadpy
 from scipy.spatial import Delaunay
 from tqdm import tqdm
 
-import pandas as pd
+from scipy import optimize
 
 from Mesh.Cantilever.area_computations import compute_triangle_element_area, \
     compute_all_element_areas
@@ -85,6 +85,8 @@ class Simulator:
 
         self.dirichlet_boundary_indices_x = np.array(self.dirichlet_boundary_indices_x, dtype=np.int32)
         self.dirichlet_boundary_indices_y = self.dirichlet_boundary_indices_x + 1
+        self.boundary_indices = np.append(self.dirichlet_boundary_indices_x,
+                                     self.dirichlet_boundary_indices_y)
 
         def check_if_traction_node(vertex):
             if vertex[0] > 0 + (self.length / 2) - self.boundary_len:
@@ -143,7 +145,8 @@ class Simulator:
         v_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
         a_n = np.zeros(self.total_number_of_nodes * 2, dtype=np.float64)
         # a_n[np.arange(1, self.total_number_of_nodes * 2, 2)] = self.gravity[1]
-        x_n = self.FEM_V.reshape([self.total_number_of_nodes * 2])
+        X_0 = self.FEM_V.reshape([self.total_number_of_nodes * 2])
+        x_n = X_0
 
         times = [0]
         displacements = [u_n]
@@ -153,11 +156,13 @@ class Simulator:
         Ms = [M]
         damping_forces = [C@v_n]
 
+
         # Main loop
         for i in tqdm(range(self.number_of_time_steps), desc="Running simulation"):
             time_step_size = np.min([self.time_step, self.number_of_time_steps*self.time_step - time])
             # Compute stiffness matrix
             k, E = self.compute_stiffness_matrix(x_n)
+            # k[self.boundary_indices] = 0
 
             # Do simulation step
             damping_term = np.dot(C, v_n)
@@ -167,19 +172,36 @@ class Simulator:
             #     f = f * 0
 
             forces = f - damping_term - k
-            # forces[np.abs(forces) < 1e-10] = 0
+            # forces[self.boundary_indices] = 0
+            # forces[np.abs(forces) < 1e-30] = 0
+
+            # def fun(x_vec):
+            #     x_next = x_vec[0:len(x_n)]
+            #     v_next = x_vec[len(x_n):len(x_n)*2]
+            #
+            #     # k, _ = self.compute_stiffness_matrix(x_next)
+            #
+            #     x_res = x_next - x_n - time_step_size * v_next
+            #
+            #     v_res = (M + time_step_size * C)@v_next - M@v_n - time_step_size*forces + time_step_size* k *(x_next - X_0)
+            #     result = np.append(x_res, v_res)
+            #
+            #     return result
+            #
+            # input_guess = np.append(x_n, v_n)
+            # sol = optimize.root(fun, input_guess, method='hybr')
+            # x_n_1 = sol.x[0:len(x_n)]
+            # x_n_1[self.boundary_indices] = X_0[self.boundary_indices]
+            # v_n_1 = sol.x[len(x_n):len(x_n)*2]
+            # # v_n_1 = (x_n_1 - x_n) / time_step_size
+            # v_n_1[self.boundary_indices] = 0
+            # v_n_1[np.abs(v_n_1) < 1e-10] = 0
+            #
+            # a_n_1 = (v_n_1 - v_n) / time_step_size
+
 
             a_n_1 = np.dot(Minv,  forces)
-
-            # M_condition_num = np.linalg.cond(M)
-            # Minv_condition_num = np.linalg.cond(Minv)
-            # C_condition_num = np.linalg.cond(C)
-
-            # Dirichlet boundary conditions (set acceleration to 0 on the fixed boundary nodes)
-            # a_n_1[self.dirichlet_boundary_indices_x] = 0
-            # a_n_1[self.dirichlet_boundary_indices_y] = 0
-
-            v_n_1 = v_n + self.time_step * a_n_1
+            v_n_1 = v_n + self.time_step * a_n_1 + 1e-10
             v_n_1[self.dirichlet_boundary_indices_x] = 0
             v_n_1[self.dirichlet_boundary_indices_y] = 0
             v_n_1[np.abs(v_n_1) < 1e-10] = 0
@@ -187,7 +209,7 @@ class Simulator:
             x_n_1 = x_n + self.time_step * v_n_1
 
             # New displacements
-            u_n = x_n_1 - self.FEM_V.reshape([self.total_number_of_nodes * 2])
+            u_n = x_n_1 - X_0
 
             # New velocities
             v_n = v_n_1
@@ -241,7 +263,7 @@ class Simulator:
                     def f(x):
                         # xi = cartesian_to_barycentric(x, triangle)
                         # shape_function = silvester_shape_function(ijk_indices[int(i / 2)], xi, self.element_order)
-                        shape_function1 = vandermonde_shape_function(self.FEM_V[global_indices], x, self.element_order)[:,int(i / 2)]
+                        shape_function1 = vandermonde_shape_function(V_e, x, self.element_order)[:,int(i / 2)]
                         # assert(np.allclose(shape_function, shape_function1))
 
                         return shape_function1 ** 2
@@ -259,6 +281,10 @@ class Simulator:
 
                         return shape_function_v1 * shape_function_v2
 
+                # if i*2 in self.boundary_indices or j*2 in self.boundary_indices:
+                #     integral_N_square[i, j] = 0.1
+                # else:
+                #     integral_N_square[i,j] = scheme.integrate(f, triangle)
                 integral_N_square[i,j] = scheme.integrate(f, triangle)
 
         return integral_N_square
@@ -309,7 +335,6 @@ class Simulator:
                 v_e.append(np.array([x,y]))
             v_e = np.array(v_e)
 
-            # u_e = v_e - V_e
 
             I = np.eye(2, dtype=np.float64)
             # C = np.dot(np.transpose(F), F)
@@ -335,24 +360,35 @@ class Simulator:
 
 
 
-            scheme = quadpy.t2.get_good_scheme(self.element_order)
+            scheme = quadpy.t2.get_good_scheme(self.element_order+1)
             quad_points = scheme.points
             quad_weights = scheme.weights
 
             A_e = self.all_A_e[face_index]
+
+            u_e = (v_e - V_e)
 
             k_e = np.zeros(2*m)
             E = np.zeros((2,2))
             F = np.zeros((2,2))
             for i in range(m):
                 def f(x):
-                    dN = vandermonde_spatial_derivative(V_e, x, self.element_order).T
+                    # dN = vandermonde_spatial_derivative(V_e, x, self.element_order).T
+                    dN = shape_function_spatial_derivative(V_e, triangle_encoding,x, self.element_order)
 
-                    F = np.zeros((2,2))
+                    # F = np.zeros((2,2))
+                    # for j in range(m):
+                    #     F_j = np.array([
+                    #         [dN[j,0]*v_e[j,0], dN[j,1]*v_e[j,0]],
+                    #         [dN[j,0]*v_e[j,1], dN[j,1]*v_e[j,1]]
+                    #     ])
+                    #     F += F_j
+
+                    F = np.eye(2)
                     for j in range(m):
                         F_j = np.array([
-                            [dN[j,0]*v_e[j,0], dN[j,1]*v_e[j,0]],
-                            [dN[j,0]*v_e[j,1], dN[j,1]*v_e[j,1]]
+                            [dN[j,0]*u_e[j,0], dN[j,1]*u_e[j,0]],
+                            [dN[j,0]*u_e[j,1], dN[j,1]*u_e[j,1]]
                         ])
                         F += F_j
 

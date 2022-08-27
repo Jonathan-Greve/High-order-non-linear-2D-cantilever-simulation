@@ -13,14 +13,17 @@ from Mesh.HigherOrderMesh.generate_ijk_indices import generate_ijk_indices
 from Simulator.HigherOrderElements.shape_functions import silvester_shape_function
 
 def make_sim_result_gif_1(FEM_V, FEM_encodings, result, num_nodes_x, num_nodes_y, traction, time, time_step_size, file_name, element_order):
-    n = num_nodes_x * num_nodes_y
+    # number_of_nodes = num_nodes_x * num_nodes_y
 
     images = []
 
     num_time_steps_per_frame = int(30 * (0.001 / time_step_size))
     time_rate = 1
 
-    sample_points = generate_ijk_indices(20) / 20
+
+
+    sample_n = int(max(40 / FEM_encodings.shape[0], 5))
+    sample_points = generate_ijk_indices(sample_n) / sample_n
 
     for i in tqdm(range(0, len(result.nodal_displacements), num_time_steps_per_frame), desc='Creating GIF'):
         # make a Figure and attach it to a canvas.
